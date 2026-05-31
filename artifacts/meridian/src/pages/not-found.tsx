@@ -1,19 +1,28 @@
+import { Link } from "wouter";
+import { AlertCircle, ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
+    <div className="flex min-h-[100svh] items-center justify-center px-4">
+      <Card className="panel-strong w-full max-w-xl rounded-[2rem]">
+        <CardContent className="space-y-6 py-10 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-destructive/20 bg-destructive/10 text-destructive">
+            <AlertCircle className="h-8 w-8" />
           </div>
-
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight">404</h1>
+            <p className="text-lg text-muted-foreground">
+              This route does not exist in the current dashboard build.
+            </p>
+          </div>
+          <Button asChild className="rounded-2xl">
+            <Link href="/">
+              <ArrowLeft className="h-4 w-4" />
+              Back to overview
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     </div>

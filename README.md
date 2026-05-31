@@ -29,6 +29,11 @@ cp .env.example .env
 pnpm dev
 ```
 
+The frontend uses a Vite `/api` proxy to reach the local API server by default.
+Set `API_ORIGIN` if you need to point the frontend dev server at a different
+backend. Set `VITE_API_BASE_URL` only when you want the browser bundle to call
+an explicit remote API endpoint.
+
 ## Useful Commands
 
 - `pnpm dev` - run frontend and API packages in parallel
@@ -42,4 +47,6 @@ pnpm dev
 ## Notes
 
 - The current API includes live endpoints for health, pools, prices, positions, and analytics.
-- The frontend still needs the real dashboard UI in phase 2.
+- The frontend now has the phase 2 dashboard shell, live queries, and wallet
+  controls. Phase 3 is test coverage, deployment wiring, and removing the last
+  synthetic data paths.

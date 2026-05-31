@@ -13,6 +13,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const basePath = process.env.BASE_PATH ?? "/";
+const apiOrigin = process.env.API_ORIGIN ?? "http://127.0.0.1:8081";
 
 export default defineConfig({
   base: basePath,
@@ -50,6 +51,12 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: apiOrigin,
+        changeOrigin: true,
+      },
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],
