@@ -1,0 +1,350 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Meridian DLMM Agent API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: pools
+    description: Meteora DLMM pool operations
+  - name: positions
+    description: User DLMM positions
+  - name: prices
+    description: Token price data
+  - name: analytics
+    description: Analytics and performance data
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /pools:
+    get:
+      operationId: getPools
+      tags: [pools]
+      summary: Get top Meteora DLMM pools with signal scores
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: minTvl
+          in: query
+          schema:
+            type: number
+            default: 100000
+        - name: minJupScore
+          in: query
+          schema:
+            type: number
+            default: 0
+      responses:
+        "200":
+          description: List of pools with signal scores
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolListResponse"
+
+  /pools/{address}:
+    get:
+      operationId: getPool
+      tags: [pools]
+      summary: Get a specific pool by address
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pool details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pool"
+
+  /positions:
+    get:
+      operationId: getPositions
+      tags: [positions]
+      summary: Get DLMM positions for a wallet
+      parameters:
+        - name: wallet
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of positions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PositionListResponse"
+
+  /prices:
+    get:
+      operationId: getPrices
+      tags: [prices]
+      summary: Get current token prices
+      parameters:
+        - name: tokens
+          in: query
+          schema:
+            type: string
+            default: "SOL,USDC,JUP,RAY,BONK"
+      responses:
+        "200":
+          description: Token prices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricesResponse"
+
+  /analytics:
+    get:
+      operationId: getAnalytics
+      tags: [analytics]
+      summary: Get analytics summary for a wallet
+      parameters:
+        - name: wallet
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Pool:
+      type: object
+      properties:
+        address:
+          type: string
+        name:
+          type: string
+        tokenX:
+          type: string
+        tokenY:
+          type: string
+        tvl:
+          type: number
+        volume24h:
+          type: number
+        fee24h:
+          type: number
+        feeRate:
+          type: number
+        binStep:
+          type: integer
+        signalScore:
+          type: number
+        jupScore:
+          type: number
+        smartMoneyScore:
+          type: number
+        ilRisk:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        signalType:
+          type: string
+          enum: [ENTER, WATCH, AVOID]
+        currentPrice:
+          type: number
+        activeBinId:
+          type: integer
+      required:
+        - address
+        - name
+        - tokenX
+        - tokenY
+        - tvl
+        - volume24h
+        - fee24h
+        - feeRate
+        - binStep
+        - signalScore
+        - jupScore
+        - smartMoneyScore
+        - ilRisk
+        - signalType
+        - currentPrice
+        - activeBinId
+
+    PoolListResponse:
+      type: object
+      properties:
+        pools:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pool"
+        total:
+          type: integer
+        lastUpdated:
+          type: string
+      required:
+        - pools
+        - total
+        - lastUpdated
+
+    Position:
+      type: object
+      properties:
+        address:
+          type: string
+        poolAddress:
+          type: string
+        poolName:
+          type: string
+        tokenX:
+          type: string
+        tokenY:
+          type: string
+        lowerBinId:
+          type: integer
+        upperBinId:
+          type: integer
+        activeBinId:
+          type: integer
+        inRange:
+          type: boolean
+        liquidityUsd:
+          type: number
+        tokenXAmount:
+          type: number
+        tokenYAmount:
+          type: number
+        feesEarned:
+          type: number
+        pnlUsd:
+          type: number
+        pnlPct:
+          type: number
+        openedAt:
+          type: string
+      required:
+        - address
+        - poolAddress
+        - poolName
+        - tokenX
+        - tokenY
+        - lowerBinId
+        - upperBinId
+        - activeBinId
+        - inRange
+        - liquidityUsd
+        - tokenXAmount
+        - tokenYAmount
+        - feesEarned
+        - pnlUsd
+        - pnlPct
+        - openedAt
+
+    PositionListResponse:
+      type: object
+      properties:
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Position"
+        totalLiquidityUsd:
+          type: number
+        totalFeesEarned:
+          type: number
+        totalPnlUsd:
+          type: number
+      required:
+        - positions
+        - totalLiquidityUsd
+        - totalFeesEarned
+        - totalPnlUsd
+
+    TokenPrice:
+      type: object
+      properties:
+        symbol:
+          type: string
+        price:
+          type: number
+        change24h:
+          type: number
+      required:
+        - symbol
+        - price
+        - change24h
+
+    PricesResponse:
+      type: object
+      properties:
+        prices:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenPrice"
+        updatedAt:
+          type: string
+      required:
+        - prices
+        - updatedAt
+
+    AnalyticsResponse:
+      type: object
+      properties:
+        totalPnlUsd:
+          type: number
+        totalFeesEarned:
+          type: number
+        winRate:
+          type: number
+        totalTrades:
+          type: integer
+        avgHoldTime:
+          type: number
+        pnlHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              pnl:
+                type: number
+            required:
+              - date
+              - pnl
+      required:
+        - totalPnlUsd
+        - totalFeesEarned
+        - winRate
+        - totalTrades
+        - avgHoldTime
+        - pnlHistory

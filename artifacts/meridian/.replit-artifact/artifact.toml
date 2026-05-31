@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Meridian Mini App"
+version = "1.0.0"
+id = "artifacts/meridian"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18722
+
+[services.development]
+run = "pnpm --filter @workspace/meridian run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/meridian", "run", "build" ]
+publicDir = "artifacts/meridian/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18722"
+BASE_PATH = "/"
