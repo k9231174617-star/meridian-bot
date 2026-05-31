@@ -13,13 +13,15 @@ type PoolListPayload = {
   lastUpdated: string;
 };
 
-let poolsCache: { data: PoolListPayload; ts: number } | null = null;
+const poolsCache = new Map<string, { data: PoolListPayload; ts: number }>();
 const CACHE_TTL = 60_000;
 
 async function fetchMeteoraPools(limit: number, minTvl: number): Promise<PoolListPayload> {
   const now = Date.now();
-  if (poolsCache && now - poolsCache.ts < CACHE_TTL) {
-    return poolsCache.data;
+  const cacheKey = `${limit}:${minTvl}`;
+  const cached = poolsCache.get(cacheKey);
+  if (cached && now - cached.ts < CACHE_TTL) {
+    return cached.data;
   }
 
   const url = `${METEORA_API}/pair/all?limit=100&sort_key=liquidity&order_by=desc`;
@@ -42,7 +44,7 @@ async function fetchMeteoraPools(limit: number, minTvl: number): Promise<PoolLis
     lastUpdated: new Date().toISOString(),
   };
 
-  poolsCache = { data: payload, ts: now };
+  poolsCache.set(cacheKey, { data: payload, ts: now });
   return payload;
 }
 

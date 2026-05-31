@@ -41,6 +41,7 @@ export function buildAnalyticsSummary(positionList: WalletPositionRecord[]): {
 export function buildPnlHistory(
   totalPnlUsd: number,
   totalFeesEarned: number,
+  referenceDate: Date = new Date(),
 ): AnalyticsResponse["pnlHistory"] {
   const history: AnalyticsResponse["pnlHistory"] = [];
   const start = Math.max(0, totalPnlUsd * 0.45 + totalFeesEarned * 0.15);
@@ -54,7 +55,7 @@ export function buildPnlHistory(
     const wave = Math.sin(progress * Math.PI * 2.25) * amplitude;
     const pnl = Math.max(0, trend + wave);
 
-    const date = new Date();
+    const date = new Date(referenceDate);
     date.setDate(date.getDate() - i);
 
     history.push({

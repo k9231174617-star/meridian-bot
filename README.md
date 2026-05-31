@@ -42,6 +42,7 @@ an explicit remote API endpoint.
 - `pnpm start` - start the API server in production mode and serve the built frontend
 - `pnpm build` - typecheck and build all packages
 - `pnpm test` - run the backend test suite
+- `pnpm smoke` - run the production smoke check after building
 - `pnpm typecheck` - run TypeScript checks across the workspace
 - `pnpm --filter @workspace/api-spec run codegen` - regenerate API client and Zod types
 - `pnpm --filter @workspace/db run push` - push schema changes to the database
@@ -54,3 +55,4 @@ an explicit remote API endpoint.
   synthetic data paths.
 - The API server now serves `artifacts/meridian/dist/public` when that build is
   present, so `pnpm start` works as a deploy entrypoint after `pnpm build`.
+- `pnpm smoke` verifies the production API and static frontend path after a build.

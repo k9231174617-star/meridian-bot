@@ -9,7 +9,7 @@ import {
 
 const router = Router();
 
-let pricesCache: { data: unknown; ts: number } | null = null;
+const pricesCache = new Map<string, { data: unknown; ts: number }>();
 const CACHE_TTL = 15_000;
 
 router.get("/", async (req, res) => {
@@ -19,8 +19,10 @@ router.get("/", async (req, res) => {
     });
 
     const now = Date.now();
-    if (pricesCache && now - pricesCache.ts < CACHE_TTL) {
-      return res.json(pricesCache.data);
+    const cacheKey = tokenListKey(query.tokens);
+    const cached = pricesCache.get(cacheKey);
+    if (cached && now - cached.ts < CACHE_TTL) {
+      return res.json(cached.data);
     }
 
     const tokenList = normalizePriceTokens(query.tokens ?? DEFAULT_PRICE_TOKENS.join(","));
@@ -35,7 +37,7 @@ router.get("/", async (req, res) => {
     const raw = (await r.json()) as { data: Record<string, { price: string; change24h?: string }> };
     const result = buildPriceResponse(tokenList, raw.data ?? {});
 
-    pricesCache = { data: result, ts: now };
+    pricesCache.set(cacheKey, { data: result, ts: now });
     return res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch prices");
@@ -44,3 +46,7 @@ router.get("/", async (req, res) => {
 });
 
 export default router;
+
+function tokenListKey(tokens?: string) {
+  return normalizePriceTokens(tokens ?? DEFAULT_PRICE_TOKENS.join(",")).join(",");
+}

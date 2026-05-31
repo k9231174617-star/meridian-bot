@@ -10,6 +10,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "start": "pnpm --filter @workspace/api-server run start",
     "test": "pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run test",
+    "smoke": "pnpm --filter @workspace/scripts run smoke",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },

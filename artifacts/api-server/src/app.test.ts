@@ -1,0 +1,163 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import app from "./app";
+
+async function withServer<T>(fn: (baseUrl: string) => Promise<T>) {
+  const server = app.listen(0);
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const address = server.address();
+
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("Expected an ephemeral port");
+  }
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    return await fn(baseUrl);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+test("health endpoint returns ok", { concurrency: false }, async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/healthz`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { status: "ok" });
+  });
+});
+
+test("pools endpoint filters and normalizes pool data", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/pair/all")) {
+      return new Response(
+        JSON.stringify([
+          {
+            address: "pool-1",
+            name: "SOL-USDC",
+            liquidity: "2500000",
+            trade_volume_24h: "4200000",
+            fees_24h: "27000",
+            bin_step: "4",
+            current_price: "165.22",
+            active_id: "321",
+          },
+          {
+            address: "pool-2",
+            name: "BONK-USDC",
+            liquidity: "50000",
+            trade_volume_24h: "10000",
+            fees_24h: "15",
+            bin_step: "40",
+            current_price: "0.00002",
+            active_id: "111",
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected fetch request: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await originalFetch(
+        `${baseUrl}/api/pools?limit=1&minTvl=100000&minJupScore=0`,
+      );
+      assert.equal(response.status, 200);
+
+      const body = (await response.json()) as { pools: Array<{ address: string }>; total: number };
+      assert.equal(body.total, 1);
+      assert.equal(body.pools[0]?.address, "pool-1");
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("prices endpoint returns normalized token prices", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/price/v2")) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            So11111111111111111111111111111111111111112: { price: "171.42" },
+            EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { price: "1.0" },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected fetch request: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await originalFetch(`${baseUrl}/api/prices?tokens=SOL,USDC`);
+      assert.equal(response.status, 200);
+
+      const body = (await response.json()) as {
+        prices: {
+          SOL: { price: number; change24h: number };
+          USDC: { price: number; change24h: number };
+        };
+      };
+
+      assert.equal(body.prices.SOL.price, 171.42);
+      assert.equal(body.prices.SOL.change24h, 0);
+      assert.equal(body.prices.USDC.price, 1);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("analytics endpoint builds a wallet summary", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/user/")) {
+      return new Response(
+        JSON.stringify({
+          userPositions: [
+            { total_fee_usd_claimed: "12.5" },
+            { total_fee_usd_claimed: "8.25" },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected fetch request: ${url}`);
+  }) as typeof fetch;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const wallet = "J7wVYf7X4a8k3N1m5P8bQ2cT9uR4fL6sH1dG3eK9mQ2";
+      const response = await originalFetch(`${baseUrl}/api/analytics?wallet=${wallet}`);
+      assert.equal(response.status, 200);
+
+      const body = (await response.json()) as {
+        totalTrades: number;
+        totalFeesEarned: number;
+        totalPnlUsd: number;
+        pnlHistory: Array<{ date: string; pnl: number }>;
+      };
+
+      assert.equal(body.totalTrades, 2);
+      assert.equal(body.totalFeesEarned, 20.75);
+      assert.equal(body.totalPnlUsd, 20.75);
+      assert.equal(body.pnlHistory.length, 14);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

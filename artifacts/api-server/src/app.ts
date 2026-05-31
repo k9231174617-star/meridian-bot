@@ -8,6 +8,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+app.disable("x-powered-by");
 
 app.use(
   pinoHttp({

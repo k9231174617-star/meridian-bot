@@ -17,8 +17,9 @@ test("analytics summary derives totals from positions", () => {
 });
 
 test("pnl history is deterministic and monotonic enough for charts", () => {
-  const first = buildPnlHistory(42.5, 8.75);
-  const second = buildPnlHistory(42.5, 8.75);
+  const referenceDate = new Date("2026-05-31T00:00:00.000Z");
+  const first = buildPnlHistory(42.5, 8.75, referenceDate);
+  const second = buildPnlHistory(42.5, 8.75, referenceDate);
 
   assert.deepEqual(first, second);
   assert.equal(first.length, 14);
