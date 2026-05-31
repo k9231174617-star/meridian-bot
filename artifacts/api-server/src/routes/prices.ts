@@ -53,10 +53,10 @@ router.get("/", async (req, res) => {
     };
 
     pricesCache = { data: result, ts: now };
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch prices");
-    res.status(500).json({ error: "Failed to fetch prices" });
+    return res.status(500).json({ error: "Failed to fetch prices" });
   }
 });
 

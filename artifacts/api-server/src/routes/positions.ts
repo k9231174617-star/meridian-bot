@@ -89,7 +89,7 @@ router.get("/", async (req, res) => {
       }
     }
 
-    res.json({
+    return res.json({
       positions,
       totalLiquidityUsd: Math.round(totalLiquidityUsd * 100) / 100,
       totalFeesEarned: Math.round(totalFeesEarned * 100) / 100,
@@ -97,7 +97,7 @@ router.get("/", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to fetch positions");
-    res.status(500).json({ error: "Failed to fetch positions" });
+    return res.status(500).json({ error: "Failed to fetch positions" });
   }
 });
 

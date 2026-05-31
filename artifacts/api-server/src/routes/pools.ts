@@ -124,10 +124,10 @@ router.get("/", async (req, res) => {
     });
 
     const data = await fetchMeteoraPools(query.limit, query.minTvl);
-    res.json(data);
+    return res.json(data);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch pools");
-    res.status(500).json({ error: "Failed to fetch pool data" });
+    return res.status(500).json({ error: "Failed to fetch pool data" });
   }
 });
 
@@ -140,10 +140,10 @@ router.get("/:address", async (req, res) => {
       return res.status(404).json({ error: "Pool not found" });
     }
     const raw = await r.json();
-    res.json(enrichPool(raw));
+    return res.json(enrichPool(raw));
   } catch (err) {
     req.log.error({ err }, "Failed to fetch pool");
-    res.status(500).json({ error: "Failed to fetch pool" });
+    return res.status(500).json({ error: "Failed to fetch pool" });
   }
 });
 
