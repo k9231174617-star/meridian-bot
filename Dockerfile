@@ -8,6 +8,7 @@ ENV CI=true
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY tsconfig.json tsconfig.base.json ./
 COPY lib ./lib
 COPY artifacts ./artifacts
 COPY scripts ./scripts
