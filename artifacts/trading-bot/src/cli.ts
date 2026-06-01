@@ -1,5 +1,5 @@
 import { loadConfig } from "./config.js";
-import { runBot } from "./runner.js";
+import { runBot, runPaperTrading } from "./runner.js";
 import { runBacktest } from "./backtest.js";
 import { DirectMarketDataProvider } from "./market-data.js";
 import { loadBacktestSnapshots } from "./backtest-data.js";
@@ -9,10 +9,16 @@ const flags = parseFlags(args);
 
 switch (command) {
   case "run":
-    await runBot(typeof flags.mode === "string" ? (flags.mode as never) : undefined);
+    await runBot(typeof flags.mode === "string" ? (flags.mode as never) : undefined, extractOverrides(flags));
     break;
   case "paper":
-    await runBot("paper");
+    await runBot("paper", extractOverrides(flags));
+    break;
+  case "paper-trade":
+    await runPaperTrading({
+      maxCycles: numberFlag(flags.cycles),
+      intervalMs: numberFlag(flags.intervalMs),
+    });
     break;
   case "backtest": {
     const config = loadConfig();
@@ -42,6 +48,21 @@ function parseFlags(argv: string[]) {
     i += 1;
   }
   return flags;
+}
+
+function extractOverrides(flags: Record<string, string | boolean>) {
+  const maxCycles = numberFlag(flags.cycles);
+  const intervalMs = numberFlag(flags.intervalMs);
+  return {
+    ...(maxCycles !== undefined ? { maxCycles } : {}),
+    ...(intervalMs !== undefined ? { intervalMs } : {}),
+  };
+}
+
+function numberFlag(value: string | boolean | undefined) {
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function buildLiveBacktestSnapshots() {

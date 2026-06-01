@@ -42,8 +42,10 @@ test("config exposes pool age and verification flags", () => {
   const config = loadConfig({
     BOT_MAX_POOL_AGE_HOURS: "24",
     BOT_REQUIRE_VERIFIED_POOL_METADATA: "true",
+    BOT_PAPER_MAX_CYCLES: "7",
   });
 
   assert.equal(config.risk.maxPoolAgeHours, 24);
   assert.equal(config.risk.requireVerifiedPoolMetadata, true);
+  assert.equal(config.paperMaxCycles, 7);
 });

@@ -8,9 +8,19 @@ import { BotMetrics } from "./observability.js";
 import { createAlertSink } from "./alerts.js";
 import type { BotMode, TradeIntent } from "./domain.js";
 
-export async function runBot(modeOverride?: BotMode) {
+export type RunBotOverrides = {
+  maxCycles?: number;
+  intervalMs?: number;
+};
+
+export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides) {
   const config = loadConfig();
   if (modeOverride) config.mode = modeOverride;
+  if (typeof overrides?.maxCycles === "number") config.maxCycles = overrides.maxCycles;
+  if (typeof overrides?.intervalMs === "number") config.intervalMs = overrides.intervalMs;
+  if (config.mode === "paper" && config.maxCycles === undefined && typeof config.paperMaxCycles === "number") {
+    config.maxCycles = config.paperMaxCycles;
+  }
 
   const provider = config.provider === "local-api"
     ? new LocalApiMarketDataProvider(config.marketDataBaseUrl)
@@ -218,6 +228,13 @@ export async function runBot(modeOverride?: BotMode) {
     }
     console.log(JSON.stringify({ event: "summary", metrics: summary, telemetry: metrics.telemetrySnapshot() }, null, 2));
   }
+}
+
+export async function runPaperTrading(overrides?: RunBotOverrides) {
+  return runBot("paper", {
+    maxCycles: overrides?.maxCycles ?? loadConfig().paperMaxCycles ?? 1,
+    intervalMs: overrides?.intervalMs,
+  });
 }
 
 async function buildExecutor(config: ReturnType<typeof loadConfig>) {

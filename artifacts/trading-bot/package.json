@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --enable-source-maps ./dist/cli.js run",
     "paper": "node --enable-source-maps ./dist/cli.js paper",
+    "paper:trade": "node --enable-source-maps ./dist/cli.js paper-trade",
     "live": "node --enable-source-maps ./dist/cli.js run --mode live",
     "backtest": "node --enable-source-maps ./dist/cli.js backtest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

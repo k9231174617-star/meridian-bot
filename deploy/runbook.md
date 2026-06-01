@@ -3,6 +3,7 @@
 ## Required environment
 - `DATABASE_URL`
 - `BOT_MODE=live`
+- `BOT_PAPER_MAX_CYCLES` for bounded paper sessions
 - `BOT_PROVIDER=direct`
 - `BOT_RPC_URL`
 - One of:
@@ -49,13 +50,13 @@ sudo systemctl enable --now trading-bot
 - `pnpm test`
 - `pnpm smoke`
 - `pnpm bot:backtest` or `pnpm bot:backtest -- --snapshots <file>`
-- `pnpm bot:paper` before every live change
+- `pnpm bot:paper:trade -- --cycles 5` before every live change
 - `pnpm bot:live` only in a tiny-capital pilot after paper verification and manual approval
 
 ## Pilot checklist
 1. Verify the bot has a funded signer wallet with only the capital required for the pilot.
 2. Point `BOT_STORAGE_DIR` at a shared writable directory so the API can expose `/api/bot/status`.
 3. Set `BOT_BACKTEST_SNAPSHOTS_FILE` to a replay file and confirm the backtest passes.
-4. Run `pnpm bot:paper` with the live configuration until the risk gates and signal flow are stable.
+4. Run `pnpm bot:paper:trade -- --cycles 5` with the live configuration until the risk gates and signal flow are stable.
 5. Enable `BOT_ALERT_WEBHOOK_URL` so circuit-breaker and execution failures are visible outside the host.
 6. Start `pnpm bot:live` with a tiny capital limit and keep the kill switch available.

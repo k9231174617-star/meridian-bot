@@ -16,6 +16,7 @@ const configSchema = z.object({
   BOT_MARKET_DATA_BASE_URL: z.string().default("http://127.0.0.1:8081/api"),
   BOT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15_000),
   BOT_MAX_CYCLES: optionalPositiveInteger(),
+  BOT_PAPER_MAX_CYCLES: optionalPositiveInteger(),
   BOT_CAPITAL_USD: z.coerce.number().positive().default(10_000),
   BOT_MAX_POSITION_BPS: z.coerce.number().int().positive().max(10_000).default(500),
   BOT_MAX_EXPOSURE_BPS: z.coerce.number().int().positive().max(10_000).default(2000),
@@ -72,6 +73,7 @@ export type BotConfig = {
   marketDataBaseUrl: string;
   intervalMs: number;
   maxCycles?: number;
+  paperMaxCycles?: number;
   risk: HardenedRiskPolicy;
   rpcUrl?: string;
   signerSecretKey?: string;
@@ -119,6 +121,7 @@ export function loadConfig(env = process.env): BotConfig {
     marketDataBaseUrl: parsed.BOT_MARKET_DATA_BASE_URL,
     intervalMs: parsed.BOT_INTERVAL_MS,
     maxCycles: parsed.BOT_MAX_CYCLES,
+    paperMaxCycles: parsed.BOT_PAPER_MAX_CYCLES,
     rpcUrl: parsed.BOT_RPC_URL,
     signerSecretKey: parsed.BOT_SIGNER_SECRET_KEY,
     signerSecretKeyFile: parsed.BOT_SIGNER_SECRET_KEY_FILE,

@@ -9,6 +9,7 @@
     "dev:web": "pnpm --filter @workspace/meridian run dev",
     "bot:dev": "pnpm --filter @workspace/trading-bot run dev",
     "bot:paper": "pnpm --filter @workspace/trading-bot run paper",
+    "bot:paper:trade": "pnpm --filter @workspace/trading-bot run paper:trade",
     "bot:live": "pnpm --filter @workspace/trading-bot run live",
     "bot:backtest": "pnpm --filter @workspace/trading-bot run backtest",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
