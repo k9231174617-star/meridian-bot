@@ -85,6 +85,9 @@ an explicit remote API endpoint.
 - Anti-scam enrichment can pull token safety metadata from RPC and optional
   Rugcheck-like endpoints, then gate risky pools by top-holder concentration,
   mint/freezer authority state, and risk score.
+- A websocket pool watcher can be enabled with `BOT_ENABLE_WSS_POOL_WATCHER=true`
+  plus `BOT_RPC_WS_URL` to surface logs that look like new pool or launch
+  events before the next polling cycle.
 - Failed live executions can be queued into a retry/DLQ flow with bounded
   backoff (`BOT_RETRY_BACKOFF_MS`) and a dead-letter path when retries are
   exhausted.

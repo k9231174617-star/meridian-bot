@@ -53,6 +53,7 @@ const configSchema = z.object({
   BOT_ALLOWED_TOKENS: z.string().default(""),
   BOT_DENIED_TOKENS: z.string().default(""),
   BOT_RPC_URL: z.string().optional(),
+  BOT_RPC_WS_URL: z.string().optional(),
   BOT_SIGNER_SECRET_KEY: z.string().optional(),
   BOT_SIGNER_SECRET_KEY_FILE: z.string().optional(),
   BOT_SIGNER_SECRET_REMOTE_URL: z.string().optional(),
@@ -62,6 +63,8 @@ const configSchema = z.object({
   BOT_ALERT_WEBHOOK_URL: z.string().optional(),
   BOT_STORAGE_DIR: z.string().optional(),
   BOT_BACKTEST_SNAPSHOTS_FILE: z.string().optional(),
+  BOT_ENABLE_WSS_POOL_WATCHER: booleanFromEnv().default(false),
+  BOT_WSS_LOG_KEYWORDS: z.string().default("initialize,create_pool,create,lb_pair,whirlpool,raydium,meteora,open_position"),
   DATABASE_URL: z.string().optional(),
 });
 
@@ -108,6 +111,7 @@ export type BotConfig = {
   retryBackoffMs: number[];
   risk: HardenedRiskPolicy;
   rpcUrl?: string;
+  rpcWsUrl?: string;
   signerSecretKey?: string;
   signerSecretKeyFile?: string;
   signerSecretRemoteUrl?: string;
@@ -117,6 +121,8 @@ export type BotConfig = {
   alertWebhookUrl?: string;
   storageDir?: string;
   backtestSnapshotsFile?: string;
+  enableWssPoolWatcher: boolean;
+  wssLogKeywords: string[];
   databaseUrl?: string;
 };
 
@@ -173,6 +179,7 @@ export function loadConfig(env = process.env): BotConfig {
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value) && value > 0),
     rpcUrl: parsed.BOT_RPC_URL,
+    rpcWsUrl: parsed.BOT_RPC_WS_URL,
     signerSecretKey: parsed.BOT_SIGNER_SECRET_KEY,
     signerSecretKeyFile: parsed.BOT_SIGNER_SECRET_KEY_FILE,
     signerSecretRemoteUrl: parsed.BOT_SIGNER_SECRET_REMOTE_URL,
@@ -182,6 +189,8 @@ export function loadConfig(env = process.env): BotConfig {
     alertWebhookUrl: parsed.BOT_ALERT_WEBHOOK_URL,
     storageDir: parsed.BOT_STORAGE_DIR,
     backtestSnapshotsFile: parsed.BOT_BACKTEST_SNAPSHOTS_FILE,
+    enableWssPoolWatcher: parsed.BOT_ENABLE_WSS_POOL_WATCHER,
+    wssLogKeywords: parseCsvList(parsed.BOT_WSS_LOG_KEYWORDS),
     databaseUrl: parsed.DATABASE_URL,
     risk,
   };

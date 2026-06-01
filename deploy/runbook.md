@@ -26,6 +26,9 @@
 - `BOT_RUGCHECK_API_KEY`
 - `BOT_ENABLE_RETRY_QUEUE=true`
 - `BOT_RETRY_BACKOFF_MS`
+- `BOT_ENABLE_WSS_POOL_WATCHER=true`
+- `BOT_RPC_WS_URL`
+- `BOT_WSS_LOG_KEYWORDS`
 - dashboard `Paper Trading` control via `/api/bot/paper-trade`
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
@@ -65,6 +68,7 @@ sudo systemctl enable --now trading-bot
 - `pnpm bot:paper:trade -- --cycles 5` before every live change
 - keep `BOT_PAPER_DEBUG_FORCE_SIGNAL=true` and `BOT_PAPER_DEBUG_BYPASS_RISK=true` for test-only sessions
 - verify Jito / honeypot / anti-scam flags are green before a live pilot
+- enable the websocket pool watcher if you want lower-latency new-pool detection than polling
 - `pnpm bot:live` only in a tiny-capital pilot after paper verification and manual approval
 
 ## Pilot checklist

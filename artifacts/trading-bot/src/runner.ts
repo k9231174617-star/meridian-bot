@@ -8,6 +8,7 @@ import { PaperExecutionClient, DryRunExecutionClient, JupiterSwapExecutionClient
 import { BotMetrics } from "./observability.js";
 import { createAlertSink } from "./alerts.js";
 import { TokenSafetyInspector } from "./security.js";
+import { PoolWatcher } from "./pool-watcher.js";
 import type { BotMode, MarketSnapshot, RetryJob, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
@@ -43,6 +44,22 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   const risk = new RiskEngine(config.risk);
   const executor = await buildExecutor(config);
   const metrics = new BotMetrics();
+  const poolWatcher = new PoolWatcher({
+    enabled: config.enableWssPoolWatcher,
+    rpcUrl: config.rpcUrl,
+    rpcWsUrl: config.rpcWsUrl,
+    logKeywords: config.wssLogKeywords,
+  });
+  const stopPoolWatcher = await poolWatcher.start(async (event) => {
+    metrics.log("wss_pool_candidate", event);
+    await emitAlert({
+      severity: "info",
+      title: "Potential new pool or launch detected",
+      message: `WSS keyword match on signature ${event.signature}`,
+      context: event,
+      createdAt: event.detectedAt,
+    });
+  });
   let previous = storage ? await storage.loadLastSnapshot() : null;
   let state: RiskState = { openExposureUsd: 0, dailyLossUsd: 0, consecutiveFailures: 0 };
   let cycles = 0;
@@ -289,6 +306,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     });
     throw error;
   } finally {
+    await stopPoolWatcher();
     const summary = metrics.snapshot();
     metrics.recordRunFinish(runStatus, new Date().toISOString());
     if (storage) {

@@ -42,6 +42,8 @@ test("backtest returns metrics", async () => {
       maxHoneypotLossBps: 150,
       enableAntiScam: false,
       enableRetryQueue: false,
+      enableWssPoolWatcher: false,
+      wssLogKeywords: ["initialize"],
       retryMaxAttempts: 3,
       retryBackoffMs: [1_000, 3_000, 10_000],
       paperMaxCycles: 1,
