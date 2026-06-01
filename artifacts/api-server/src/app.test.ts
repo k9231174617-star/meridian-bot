@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import app from "./app";
 
 async function withServer<T>(fn: (baseUrl: string) => Promise<T>) {
@@ -159,5 +162,41 @@ test("analytics endpoint builds a wallet summary", { concurrency: false }, async
     });
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("bot status endpoint reads shared storage", { concurrency: false }, async () => {
+  const originalStorageDir = process.env.BOT_STORAGE_DIR;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "bot-status-api-"));
+  await mkdir(dir, { recursive: true });
+  await Promise.all([
+    writeFile(
+      path.join(dir, "runs.jsonl"),
+      [
+        JSON.stringify({ kind: "run_start", runId: 1, startedAt: "2026-06-01T00:00:00.000Z", config: { mode: "live" } }),
+        JSON.stringify({ kind: "run_finish", runId: 1, status: "completed", summary: { fills: 2 }, endedAt: "2026-06-01T00:01:00.000Z" }),
+      ].join("\n"),
+      "utf8",
+    ),
+    writeFile(
+      path.join(dir, "alerts.jsonl"),
+      `${JSON.stringify({ kind: "alert", alert: { severity: "critical", title: "Alert", message: "Boom", createdAt: "2026-06-01T00:00:02.000Z" } })}\n`,
+      "utf8",
+    ),
+  ]);
+
+  process.env.BOT_STORAGE_DIR = dir;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/bot/status`);
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as { lastRun: { status: string; mode: string } | null; recentAlerts: Array<{ severity: string }> };
+      assert.equal(body.lastRun?.status, "completed");
+      assert.equal(body.lastRun?.mode, "live");
+      assert.equal(body.recentAlerts[0]?.severity, "critical");
+    });
+  } finally {
+    process.env.BOT_STORAGE_DIR = originalStorageDir;
   }
 });

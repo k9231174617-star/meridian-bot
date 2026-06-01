@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Area,
   AreaChart,
@@ -33,6 +34,24 @@ type WalletRow = {
 };
 
 type StringMap = Record<string, string>;
+type BotStatus = {
+  storageDir: string;
+  updatedAt: string;
+  lastRun: {
+    runId: number;
+    status: "running" | "completed" | "failed";
+    mode?: string;
+    startedAt?: string;
+    endedAt?: string;
+    summary?: Record<string, unknown>;
+  } | null;
+  recentAlerts: Array<{
+    severity: "info" | "warning" | "critical";
+    title: string;
+    message: string;
+    createdAt: string;
+  }>;
+};
 
 const STRINGS: Record<Language, StringMap> = {
   en: {
@@ -391,6 +410,15 @@ function formatPoolScore(value: number) {
   return `${Math.max(0, Math.min(100, Math.round(value)))} `;
 }
 
+async function fetchBotStatus(): Promise<BotStatus> {
+  const response = await fetch("/api/bot/status", { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`Bot status request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as BotStatus;
+}
+
 function App() {
   const [lang, setLang] = useState<Language>(() => readStorage(LANGUAGE_KEY, "en"));
   const [currentPage, setCurrentPage] = useState<Page>(() => readStorage(PAGE_KEY, "signals") as Page);
@@ -578,6 +606,11 @@ function App() {
       queryKey: ["health"],
       refetchInterval: 30_000,
     },
+  });
+  const statusQuery = useQuery({
+    queryKey: ["bot-status"],
+    queryFn: fetchBotStatus,
+    refetchInterval: 30_000,
   });
 
   const analytics = analyticsQuery.data;
@@ -777,6 +810,7 @@ function App() {
   }
 
   const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
+  const botStatus = statusQuery.data;
 
   return (
     <main className="dashboard-root min-h-screen bg-background text-foreground">
@@ -828,6 +862,28 @@ function App() {
             <StatBox value={String(poolsQuery.data?.total ?? pools.length)} label={t.poolsScanned} />
             <StatBox value={String(activeSignalsCount)} label={t.signals} color="#39ff14" />
             <StatBox value={String(activePoolsCount)} label={t.positions} color="#00b4ff" />
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-label mb-3">BOT RUNTIME</div>
+          <div className="grid grid-auto-fit gap-3">
+            <div className="metric">
+              <div className="metric-val">{botStatus?.lastRun ? botStatus.lastRun.status.toUpperCase() : "NO RUN"}</div>
+              <div className="metric-lbl">Last run</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{botStatus?.lastRun?.mode?.toUpperCase() ?? "N/A"}</div>
+              <div className="metric-lbl">Mode</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{botStatus?.recentAlerts.length ?? 0}</div>
+              <div className="metric-lbl">Recent alerts</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{botStatus ? formatRelativeShort(botStatus.updatedAt) : "—"}</div>
+              <div className="metric-lbl">Updated</div>
+            </div>
           </div>
         </div>
 

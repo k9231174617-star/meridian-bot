@@ -42,7 +42,7 @@ an explicit remote API endpoint.
 - `pnpm bot:dev` - run the trading bot in paper mode from source
 - `pnpm bot:paper` - run the compiled bot in paper mode
 - `pnpm bot:live` - run the compiled bot in live mode
-- `pnpm bot:backtest` - run the built-in backtest against live snapshot samples
+- `pnpm bot:backtest` - run the built-in backtest against live snapshot samples or a file from `BOT_BACKTEST_SNAPSHOTS_FILE`
 - `pnpm start` - start the API server in production mode and serve the built frontend
 - `pnpm build` - typecheck and build all packages
 - `pnpm test` - run the backend test suite
@@ -73,4 +73,8 @@ an explicit remote API endpoint.
 - Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
   flows, and it persists tracked LP positions in `bot_positions` when a database
   is available.
+- The API now exposes `/api/bot/status` from the shared bot storage directory,
+  so the dashboard can show the latest run, status, and recent alerts.
+- `BOT_BACKTEST_SNAPSHOTS_FILE` can point the backtester at a JSON or JSONL
+  snapshot file for deterministic replay.
 - Deployment manifests and runbook notes live under `deploy/`.

@@ -42,6 +42,7 @@ const configSchema = z.object({
   BOT_JUPITER_API_KEY: z.string().optional(),
   BOT_ALERT_WEBHOOK_URL: z.string().optional(),
   BOT_STORAGE_DIR: z.string().optional(),
+  BOT_BACKTEST_SNAPSHOTS_FILE: z.string().optional(),
   DATABASE_URL: z.string().optional(),
 });
 
@@ -81,6 +82,7 @@ export type BotConfig = {
   jupiterApiKey?: string;
   alertWebhookUrl?: string;
   storageDir?: string;
+  backtestSnapshotsFile?: string;
   databaseUrl?: string;
 };
 
@@ -126,6 +128,7 @@ export function loadConfig(env = process.env): BotConfig {
     jupiterApiKey: parsed.BOT_JUPITER_API_KEY,
     alertWebhookUrl: parsed.BOT_ALERT_WEBHOOK_URL,
     storageDir: parsed.BOT_STORAGE_DIR,
+    backtestSnapshotsFile: parsed.BOT_BACKTEST_SNAPSHOTS_FILE,
     databaseUrl: parsed.DATABASE_URL,
     risk,
   };

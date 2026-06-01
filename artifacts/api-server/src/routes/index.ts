@@ -4,6 +4,7 @@ import poolsRouter from "./pools";
 import positionsRouter from "./positions";
 import pricesRouter from "./prices";
 import analyticsRouter from "./analytics";
+import botRouter from "./bot";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use("/pools", poolsRouter);
 router.use("/positions", positionsRouter);
 router.use("/prices", pricesRouter);
 router.use("/analytics", analyticsRouter);
+router.use("/bot", botRouter);
 
 export default router;

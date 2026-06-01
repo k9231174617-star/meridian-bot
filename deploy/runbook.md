@@ -11,10 +11,12 @@
   - `BOT_SIGNER_SECRET_REMOTE_URL`
 - Optional:
   - `BOT_SIGNER_SECRET_REMOTE_TOKEN`
-  - `BOT_ALERT_WEBHOOK_URL`
-  - `BOT_MAX_POOL_AGE_HOURS`
-  - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
-  - allow/deny list variables
+- `BOT_ALERT_WEBHOOK_URL`
+- `BOT_STORAGE_DIR`
+- `BOT_BACKTEST_SNAPSHOTS_FILE`
+- `BOT_MAX_POOL_AGE_HOURS`
+- `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
+- allow/deny list variables
 
 ## Docker
 1. Copy `.env.example` to `.env`.
@@ -46,5 +48,14 @@ sudo systemctl enable --now trading-bot
 - `pnpm build`
 - `pnpm test`
 - `pnpm smoke`
-- `pnpm bot:backtest`
-- `pnpm bot:live` in a tiny-capital pilot only after paper verification
+- `pnpm bot:backtest` or `pnpm bot:backtest -- --snapshots <file>`
+- `pnpm bot:paper` before every live change
+- `pnpm bot:live` only in a tiny-capital pilot after paper verification and manual approval
+
+## Pilot checklist
+1. Verify the bot has a funded signer wallet with only the capital required for the pilot.
+2. Point `BOT_STORAGE_DIR` at a shared writable directory so the API can expose `/api/bot/status`.
+3. Set `BOT_BACKTEST_SNAPSHOTS_FILE` to a replay file and confirm the backtest passes.
+4. Run `pnpm bot:paper` with the live configuration until the risk gates and signal flow are stable.
+5. Enable `BOT_ALERT_WEBHOOK_URL` so circuit-breaker and execution failures are visible outside the host.
+6. Start `pnpm bot:live` with a tiny capital limit and keep the kill switch available.

@@ -2,6 +2,7 @@ import { loadConfig } from "./config.js";
 import { runBot } from "./runner.js";
 import { runBacktest } from "./backtest.js";
 import { DirectMarketDataProvider } from "./market-data.js";
+import { loadBacktestSnapshots } from "./backtest-data.js";
 
 const [, , command = "run", ...args] = process.argv;
 const flags = parseFlags(args);
@@ -15,11 +16,9 @@ switch (command) {
     break;
   case "backtest": {
     const config = loadConfig();
-    const provider = new DirectMarketDataProvider();
-    const snapshots = [];
-    for (let i = 0; i < 5; i += 1) {
-      snapshots.push(await provider.fetchSnapshot());
-    }
+    const snapshots = config.backtestSnapshotsFile
+      ? await loadBacktestSnapshots(config.backtestSnapshotsFile)
+      : await buildLiveBacktestSnapshots();
     const metrics = await runBacktest(config, snapshots);
     console.log(JSON.stringify({ event: "backtest", metrics }, null, 2));
     break;
@@ -43,4 +42,13 @@ function parseFlags(argv: string[]) {
     i += 1;
   }
   return flags;
+}
+
+async function buildLiveBacktestSnapshots() {
+  const provider = new DirectMarketDataProvider();
+  const snapshots = [];
+  for (let i = 0; i < 5; i += 1) {
+    snapshots.push(await provider.fetchSnapshot());
+  }
+  return snapshots;
 }
