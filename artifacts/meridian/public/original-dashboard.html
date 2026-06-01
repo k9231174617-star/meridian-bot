@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Meridian</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#020608;--surface:rgba(0,255,200,0.03);--border:rgba(0,255,180,0.12);--neon-cyan:#00ffcc;--neon-blue:#00b4ff;--neon-violet:#a855f7;--neon-green:#39ff14;--neon-red:#ff2d55;--neon-orange:#ff6b00;--text:#c8f0e8;--text-dim:#4a7a6e;--glow-cyan:0 0 8px #00ffcc66,0 0 20px #00ffcc22;--glow-green:0 0 8px #39ff1466,0 0 20px #39ff1422;--glow-red:0 0 8px #ff2d5566,0 0 20px #ff2d5522;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,180,0.022) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,180,0.022) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+body::after{content:'';position:fixed;top:-20%;left:50%;transform:translateX(-50%);width:70vw;height:60vh;background:radial-gradient(ellipse,rgba(0,255,180,0.04) 0%,transparent 70%);pointer-events:none;z-index:0;}
+.page{display:none;position:relative;z-index:1;max-width:420px;margin:0 auto;padding:16px 14px 90px;}
+.page.active{display:block;}
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 0 16px;border-bottom:1px solid var(--border);margin-bottom:18px;}
+.logo-wrap{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:36px;height:36px;border:1.5px solid var(--neon-cyan);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:var(--glow-cyan);position:relative;overflow:hidden;}
+.logo-icon::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,255,200,.15),transparent);}
+.logo-icon svg{width:20px;height:20px;filter:drop-shadow(0 0 4px var(--neon-cyan));}
+.logo-text{font-family:'Orbitron',monospace;font-weight:900;font-size:18px;letter-spacing:3px;color:var(--neon-cyan);text-shadow:var(--glow-cyan);}
+.logo-sub{font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:2px;color:var(--text-dim);margin-top:1px;}
+.agent-toggle{display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:10px;font-family:'Orbitron',monospace;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;border:none;transition:all .25s ease;}
+.agent-toggle.running{background:linear-gradient(135deg,rgba(255,45,85,0.15),rgba(255,45,85,0.05));border:1px solid rgba(255,45,85,0.4);color:var(--neon-red);box-shadow:var(--glow-red);}
+.agent-toggle.stopped{background:linear-gradient(135deg,rgba(57,255,20,0.15),rgba(57,255,20,0.05));border:1px solid rgba(57,255,20,0.4);color:var(--neon-green);box-shadow:var(--glow-green);}
+.toggle-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.agent-toggle.running .toggle-dot{background:var(--neon-red);box-shadow:0 0 8px var(--neon-red);animation:pulse 1.2s ease-in-out infinite;}
+.agent-toggle.stopped .toggle-dot{background:var(--neon-green);box-shadow:0 0 8px var(--neon-green);}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px;position:relative;overflow:hidden;}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--neon-cyan),transparent);opacity:.5;}
+.section-title{font-family:'Orbitron',monospace;font-size:11px;font-weight:700;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:12px;margin-top:6px;display:flex;align-items:center;gap:8px;}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.section-label{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:3px;color:var(--text-dim);text-transform:uppercase;}
+.agent-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.scan-timer{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--neon-blue);display:flex;align-items:center;gap:5px;}
+.timer-bar-wrap{background:rgba(0,180,255,.08);border-radius:2px;height:3px;margin-bottom:14px;overflow:hidden;}
+.timer-bar{height:100%;background:linear-gradient(90deg,var(--neon-blue),var(--neon-cyan));border-radius:2px;box-shadow:0 0 8px var(--neon-blue);animation:scanProgress 30s linear infinite;}
+@keyframes scanProgress{0%{width:0%}100%{width:100%}}
+.agent-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.stat-box{text-align:center;padding:10px 6px;background:rgba(0,0,0,.3);border-radius:10px;border:1px solid rgba(0,255,180,.07);}
+.stat-val{font-family:'Orbitron',monospace;font-size:15px;font-weight:700;color:var(--neon-cyan);text-shadow:var(--glow-cyan);}
+.stat-lbl{font-size:9px;letter-spacing:1px;color:var(--text-dim);margin-top:3px;font-family:'Share Tech Mono',monospace;}
+.stopped-overlay{display:none;position:absolute;inset:0;border-radius:16px;background:rgba(2,6,8,.8);align-items:center;justify-content:center;backdrop-filter:blur(2px);z-index:10;}
+.stopped-overlay.show{display:flex;}
+.stopped-msg{font-family:'Orbitron',monospace;font-size:12px;letter-spacing:2px;color:var(--neon-red);text-shadow:var(--glow-red);}
+.chips-row{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none;}
+.chips-row::-webkit-scrollbar{display:none;}
+.chip{padding:5px 12px;border-radius:20px;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1px;white-space:nowrap;cursor:pointer;border:1px solid;transition:all .15s;}
+.chip.selected{background:rgba(0,255,180,.1);border-color:var(--neon-cyan);color:var(--neon-cyan);box-shadow:var(--glow-cyan);}
+.chip.unselected{background:transparent;border-color:rgba(255,255,255,.1);color:var(--text-dim);}
+.signal-card{border-radius:16px;padding:16px;margin-bottom:14px;position:relative;overflow:hidden;border:1px solid;cursor:pointer;transition:transform .15s ease;}
+.signal-card:active{transform:scale(.98);}
+.signal-card.hot{background:linear-gradient(135deg,rgba(0,255,180,.05),rgba(0,180,255,.03));border-color:rgba(0,255,180,.25);}
+.signal-card.hot::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-blue));box-shadow:0 0 12px var(--neon-cyan);}
+.signal-card.warm{background:linear-gradient(135deg,rgba(168,85,247,.05),rgba(0,180,255,.02));border-color:rgba(168,85,247,.2);}
+.signal-card.warm::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--neon-violet),var(--neon-blue));box-shadow:0 0 12px var(--neon-violet);}
+.signal-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.token-info{display:flex;align-items:center;gap:10px;}
+.token-avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:11px;font-weight:700;border:1.5px solid;flex-shrink:0;}
+.token-avatar.sol{border-color:var(--neon-cyan);color:var(--neon-cyan);background:rgba(0,255,180,.08);box-shadow:var(--glow-cyan);}
+.token-avatar.jup{border-color:var(--neon-violet);color:var(--neon-violet);background:rgba(168,85,247,.08);}
+.token-name{font-family:'Orbitron',monospace;font-size:14px;font-weight:700;letter-spacing:1px;}
+.token-pair{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:2px;}
+.signal-badge{padding:4px 10px;border-radius:20px;font-family:'Share Tech Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
+.badge-enter{background:rgba(57,255,20,.12);color:var(--neon-green);border:1px solid rgba(57,255,20,.3);box-shadow:var(--glow-green);}
+.badge-watch{background:rgba(168,85,247,.12);color:var(--neon-violet);border:1px solid rgba(168,85,247,.3);}
+.signal-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;}
+.metric{background:rgba(0,0,0,.3);border-radius:8px;padding:7px 4px;text-align:center;}
+.metric-val{font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:600;}
+.metric-val.green{color:var(--neon-green);}.metric-val.cyan{color:var(--neon-cyan);}.metric-val.violet{color:var(--neon-violet);}.metric-val.orange{color:var(--neon-orange);}
+.metric-lbl{font-size:8px;letter-spacing:1px;color:var(--text-dim);margin-top:2px;font-family:'Share Tech Mono',monospace;}
+.score-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.score-label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);width:70px;flex-shrink:0;}
+.score-bar-bg{flex:1;height:4px;background:rgba(255,255,255,.05);border-radius:2px;overflow:hidden;}
+.score-bar-fill{height:100%;border-radius:2px;}
+.fill-green{background:linear-gradient(90deg,#1a6620,var(--neon-green));box-shadow:0 0 6px var(--neon-green);}
+.fill-cyan{background:linear-gradient(90deg,#005540,var(--neon-cyan));box-shadow:0 0 6px var(--neon-cyan);}
+.fill-violet{background:linear-gradient(90deg,#3b1a60,var(--neon-violet));box-shadow:0 0 6px var(--neon-violet);}
+.score-num{font-family:'Share Tech Mono',monospace;font-size:10px;width:28px;text-align:right;}
+.signal-footer{display:flex;align-items:center;justify-content:space-between;}
+.signal-time{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);}
+.enter-btn{padding:7px 16px;border-radius:8px;font-family:'Orbitron',monospace;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;border:none;transition:all .2s;}
+.enter-btn.active{background:linear-gradient(135deg,var(--neon-cyan),var(--neon-blue));color:#000;box-shadow:0 0 16px rgba(0,255,180,.4);}
+.enter-btn.passive{background:rgba(168,85,247,.1);color:var(--neon-violet);border:1px solid rgba(168,85,247,.3);}
+.pnl-summary{background:linear-gradient(135deg,rgba(0,255,180,.04),rgba(0,180,255,.03));border:1px solid rgba(0,255,180,.15);border-radius:14px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;}
+.pnl-main{font-family:'Orbitron',monospace;font-size:26px;font-weight:900;color:var(--neon-green);text-shadow:0 0 16px rgba(57,255,20,.5);}
+.pnl-label{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:4px;}
+.pnl-sub{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--neon-cyan);}
+.pos-card{background:rgba(0,180,255,.03);border:1px solid rgba(0,180,255,.12);border-radius:14px;padding:14px;margin-bottom:10px;position:relative;}
+.pos-card::after{content:'';position:absolute;left:0;top:20%;bottom:20%;width:2px;background:var(--neon-blue);border-radius:2px;box-shadow:0 0 8px var(--neon-blue);}
+.pos-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.pos-name{font-family:'Orbitron',monospace;font-size:13px;font-weight:700;color:var(--neon-blue);}
+.pos-pnl{font-family:'Share Tech Mono',monospace;font-size:14px;font-weight:600;}
+.pos-pnl.up{color:var(--neon-green);text-shadow:0 0 6px var(--neon-green);}
+.pos-pnl.down{color:var(--neon-red);text-shadow:0 0 6px var(--neon-red);}
+.pos-details{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.pos-detail{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);}
+.pos-detail span{display:block;color:var(--text);font-size:11px;margin-top:2px;}
+.action-row{display:flex;gap:8px;margin-top:10px;}
+.act-btn{flex:1;padding:7px;border-radius:8px;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1px;text-align:center;cursor:pointer;border:1px solid;background:transparent;transition:all .15s;}
+.act-btn.rebalance{border-color:rgba(0,180,255,.3);color:var(--neon-blue);}
+.act-btn.close-pos{border-color:rgba(255,45,85,.3);color:var(--neon-red);}
+.act-btn:active{opacity:.7;transform:scale(.97);}
+.smartmoney-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.sm-wallet{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sm-action{font-family:'Share Tech Mono',monospace;font-size:9px;padding:3px 8px;border-radius:4px;}
+.sm-entered{background:rgba(57,255,20,.1);color:var(--neon-green);}
+.sm-exited{background:rgba(255,45,85,.1);color:var(--neon-red);}
+.sm-amount{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--neon-cyan);text-align:right;width:60px;}
+.chart-canvas{width:100%;height:140px;display:block;}
+.analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+.analytics-tile{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:12px;padding:12px;}
+.analytics-tile .a-val{font-family:'Orbitron',monospace;font-size:18px;font-weight:700;}
+.analytics-tile .a-lbl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:3px;letter-spacing:1px;}
+.analytics-tile .a-change{font-family:'Share Tech Mono',monospace;font-size:10px;margin-top:4px;}
+.a-change.up{color:var(--neon-green);}.a-change.down{color:var(--neon-red);}
+.history-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+.history-item:last-child{border:none;}
+.hi-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;}
+.hi-icon.open{background:rgba(57,255,20,.1);}.hi-icon.close{background:rgba(255,45,85,.1);}.hi-icon.rebal{background:rgba(0,180,255,.1);}
+.hi-info{flex:1;}
+.hi-name{font-family:'Orbitron',monospace;font-size:12px;font-weight:700;}
+.hi-time{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:2px;}
+.hi-pnl{font-family:'Share Tech Mono',monospace;font-size:12px;}
+.hi-pnl.up{color:var(--neon-green);}.hi-pnl.down{color:var(--neon-red);}.hi-pnl.neu{color:var(--neon-blue);}
+.wallet-balance{text-align:center;padding:24px 0 20px;}
+.wb-label{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--text-dim);margin-bottom:8px;}
+.wb-amount{font-family:'Orbitron',monospace;font-size:36px;font-weight:900;color:var(--neon-cyan);text-shadow:var(--glow-cyan);}
+.wb-sub{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:6px;}
+.wallet-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px;}
+.wa-btn{padding:12px 0;border-radius:12px;text-align:center;cursor:pointer;border:1px solid;transition:all .15s;}
+.wa-btn:active{transform:scale(.96);}
+.wa-btn.deposit{border-color:rgba(57,255,20,.3);background:rgba(57,255,20,.06);}
+.wa-btn.withdraw{border-color:rgba(255,45,85,.3);background:rgba(255,45,85,.06);}
+.wa-btn.swap{border-color:rgba(0,180,255,.3);background:rgba(0,180,255,.06);}
+.wa-btn .wa-icon{font-size:18px;margin-bottom:4px;}
+.wa-btn .wa-lbl{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--text-dim);}
+.asset-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.asset-row:last-child{border:none;}
+.asset-logo{width:34px;height:34px;border-radius:50%;border:1.5px solid;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:9px;font-weight:700;flex-shrink:0;}
+.asset-logo.sol-a{border-color:var(--neon-cyan);color:var(--neon-cyan);background:rgba(0,255,180,.08);}
+.asset-logo.usdc-a{border-color:var(--neon-blue);color:var(--neon-blue);background:rgba(0,180,255,.08);}
+.asset-logo.jup-a{border-color:var(--neon-violet);color:var(--neon-violet);background:rgba(168,85,247,.08);}
+.asset-info{flex:1;}
+.asset-name{font-family:'Orbitron',monospace;font-size:13px;font-weight:700;}
+.asset-amount{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:2px;}
+.asset-val{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--neon-cyan);}
+.settings-section{margin-bottom:20px;}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;}
+.setting-row:hover{border-color:rgba(0,255,180,.25);}
+.setting-row-info{display:flex;align-items:center;gap:10px;}
+.setting-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;}
+.setting-label{font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:600;}
+.setting-sub{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:1px;}
+.setting-right{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);}
+.toggle-switch{position:relative;width:40px;height:22px;flex-shrink:0;}
+.toggle-switch input{opacity:0;width:0;height:0;}
+.toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,.1);border-radius:11px;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:.3s;}
+.toggle-slider:before{content:'';position:absolute;height:16px;width:16px;left:2px;top:2px;background:#4a7a6e;border-radius:50%;transition:.3s;}
+.toggle-switch input:checked+.toggle-slider{background:rgba(0,255,180,.15);border-color:rgba(0,255,180,.4);}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(18px);background:var(--neon-cyan);box-shadow:0 0 6px var(--neon-cyan);}
+.lang-selector{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.lang-btn{padding:10px;border-radius:10px;text-align:center;cursor:pointer;border:1px solid;transition:all .2s;font-family:'Orbitron',monospace;font-size:12px;font-weight:700;letter-spacing:1px;}
+.lang-btn.active{background:rgba(0,255,180,.1);border-color:var(--neon-cyan);color:var(--neon-cyan);box-shadow:var(--glow-cyan);}
+.lang-btn.inactive{background:transparent;border-color:rgba(255,255,255,.1);color:var(--text-dim);}
+.lang-flag{font-size:18px;display:block;margin-bottom:4px;}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:transparent;cursor:pointer;margin-bottom:8px;}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--neon-green),var(--neon-orange),var(--neon-red));}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--neon-cyan);border:2px solid #020608;box-shadow:var(--glow-cyan);margin-top:-6px;}
+.risk-labels{display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-bottom:8px;}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(2,6,8,.96);border-top:1px solid var(--border);backdrop-filter:blur(12px);display:flex;padding:10px 0 14px;z-index:100;max-width:420px;margin:0 auto;}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;opacity:.35;transition:opacity .2s;position:relative;}
+.nav-item.active{opacity:1;}
+.nav-icon{width:22px;height:22px;display:flex;align-items:center;justify-content:center;position:relative;}
+.nav-label{font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:1px;color:var(--text-dim);}
+.nav-item.active .nav-label{color:var(--neon-cyan);}
+.notif-badge{position:absolute;top:-4px;right:-6px;width:14px;height:14px;background:var(--neon-red);border-radius:50%;font-size:8px;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-weight:700;box-shadow:0 0 6px var(--neon-red);}
+.scan-line{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--neon-cyan),transparent);opacity:0;animation:scanAnim 4s ease-in-out infinite;pointer-events:none;}
+@keyframes scanAnim{0%{top:0;opacity:0}5%{opacity:.5}95%{opacity:.3}100%{top:100%;opacity:0}}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(2,6,8,.95);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--neon-cyan);letter-spacing:1px;opacity:0;transition:all .3s;pointer-events:none;z-index:999;white-space:nowrap;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* Wallet connect modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(2,6,8,.85);z-index:200;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}
+.modal-overlay.show{display:flex;}
+.modal-sheet{background:#0a1a18;border:1px solid var(--border);border-radius:20px 20px 0 0;padding:24px 20px 36px;width:100%;max-width:420px;}
+.modal-title{font-family:'Orbitron',monospace;font-size:14px;font-weight:700;letter-spacing:2px;color:var(--neon-cyan);text-align:center;margin-bottom:4px;}
+.modal-sub{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:20px;letter-spacing:1px;}
+.wallet-option{display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;border:1px solid var(--border);margin-bottom:10px;cursor:pointer;transition:all .2s;}
+.wallet-option:hover{border-color:rgba(0,255,180,.3);background:rgba(0,255,180,.04);}
+.wallet-option:active{transform:scale(.98);}
+.wo-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(0,0,0,.4);border:1px solid var(--border);}
+.wo-name{font-family:'Orbitron',monospace;font-size:13px;font-weight:700;color:var(--text);}
+.wo-sub{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:2px;}
+.wo-badge{margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;padding:3px 8px;border-radius:4px;background:rgba(0,255,180,.1);color:var(--neon-cyan);border:1px solid rgba(0,255,180,.2);}
+.modal-cancel{width:100%;margin-top:6px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:transparent;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);cursor:pointer;letter-spacing:1px;transition:all .2s;}
+.modal-cancel:hover{border-color:rgba(255,45,85,.3);color:var(--neon-red);}
+
+/* Connect wallet button on wallet page */
+.connect-wallet-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:14px;border-radius:12px;border:1px solid rgba(0,255,180,.3);background:rgba(0,255,180,.06);font-family:'Orbitron',monospace;font-size:11px;font-weight:700;letter-spacing:2px;color:var(--neon-cyan);cursor:pointer;transition:all .2s;margin-bottom:16px;}
+.connect-wallet-btn:hover{background:rgba(0,255,180,.1);box-shadow:var(--glow-cyan);}
+.connect-wallet-btn:active{transform:scale(.98);}
+.wallet-connected-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:rgba(57,255,20,.1);border:1px solid rgba(57,255,20,.3);font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--neon-green);margin-bottom:16px;}
+.wc-dot{width:6px;height:6px;border-radius:50%;background:var(--neon-green);box-shadow:0 0 6px var(--neon-green);}
+</style>
+</head>
+<body>
+
+<!-- ====== PAGE: SIGNALS ====== -->
+<div class="page active" id="page-signals">
+  <div class="header">
+    <div class="logo-wrap">
+      <div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#00ffcc"><polygon points="12,2 22,8 22,16 12,22 2,16 2,8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div>
+      <div><div class="logo-text">MERIDIAN</div><div class="logo-sub">METEORA DLMM AGENT</div></div>
+    </div>
+    <button class="agent-toggle running" id="btn-toggle-1" onclick="toggleAgent()">
+      <div class="toggle-dot"></div><span class="btn-toggle-lbl">STOP</span>
+    </button>
+  </div>
+  <div class="card" id="agentCard">
+    <div class="scan-line"></div>
+    <div class="stopped-overlay" id="stoppedOverlay"><div class="stopped-msg" id="stoppedMsg">⬛ AGENT STOPPED</div></div>
+    <div class="agent-header">
+      <div class="section-label" id="lbl-agent-status">⬡ AGENT STATUS</div>
+      <div class="scan-timer"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span id="scanTimerText">SCAN IN 18:24</span></div>
+    </div>
+    <div class="timer-bar-wrap"><div class="timer-bar" id="timerBar"></div></div>
+    <div class="agent-stats">
+      <div class="stat-box"><div class="stat-val">247</div><div class="stat-lbl" id="s-pools">POOLS SCANNED</div></div>
+      <div class="stat-box"><div class="stat-val" style="color:var(--neon-green)">3</div><div class="stat-lbl" id="s-signals">SIGNALS</div></div>
+      <div class="stat-box"><div class="stat-val" style="color:var(--neon-blue)">2</div><div class="stat-lbl" id="s-positions">POSITIONS</div></div>
+    </div>
+  </div>
+  <div class="chips-row">
+    <div class="chip selected" onclick="selectChip(this)">ALL SIGNALS</div>
+    <div class="chip unselected" onclick="selectChip(this)">🔥 HOT</div>
+    <div class="chip unselected" onclick="selectChip(this)">METEORA</div>
+    <div class="chip unselected" onclick="selectChip(this)">SMART $</div>
+    <div class="chip unselected" onclick="selectChip(this)">ORGANIC</div>
+  </div>
+  <div class="section-title" id="s-active-signals">ACTIVE SIGNALS</div>
+  <div class="signal-card hot">
+    <div class="signal-top">
+      <div class="token-info"><div class="token-avatar sol">SOL</div><div><div class="token-name" style="color:var(--neon-cyan)">SOL/USDC</div><div class="token-pair">METEORA DLMM · bin step 1</div></div></div>
+      <div class="signal-badge badge-enter" id="s-enter">ENTER</div>
+    </div>
+    <div class="signal-metrics">
+      <div class="metric"><div class="metric-val green">+4.7%</div><div class="metric-lbl">24H FEE</div></div>
+      <div class="metric"><div class="metric-val cyan">$2.4M</div><div class="metric-lbl">TVL</div></div>
+      <div class="metric"><div class="metric-val orange">$18.2M</div><div class="metric-lbl">VOL 24H</div></div>
+      <div class="metric"><div class="metric-val violet">87</div><div class="metric-lbl">JUP SCORE</div></div>
+    </div>
+    <div class="score-row"><div class="score-label" id="s-jup-org">JUP ORGANIC</div><div class="score-bar-bg"><div class="score-bar-fill fill-green" style="width:87%"></div></div><div class="score-num" style="color:var(--neon-green)">87</div></div>
+    <div class="score-row"><div class="score-label" id="s-smart-m">SMART MONEY</div><div class="score-bar-bg"><div class="score-bar-fill fill-cyan" style="width:72%"></div></div><div class="score-num" style="color:var(--neon-cyan)">72</div></div>
+    <div class="score-row"><div class="score-label" id="s-il-risk">IL RISK</div><div class="score-bar-bg"><div class="score-bar-fill fill-violet" style="width:24%"></div></div><div class="score-num" style="color:var(--neon-violet)" id="s-low">LOW</div></div>
+    <div class="signal-footer">
+      <div class="signal-time" id="s-2min">🕐 2 MIN AGO</div>
+      <button class="enter-btn active" id="s-enter-pool-btn" onclick="showToast(T('enterPool'))">ENTER POOL →</button>
+    </div>
+  </div>
+  <div class="signal-card warm">
+    <div class="signal-top">
+      <div class="token-info"><div class="token-avatar jup">JUP</div><div><div class="token-name" style="color:var(--neon-violet)">JUP/SOL</div><div class="token-pair">METEORA DLMM · bin step 5</div></div></div>
+      <div class="signal-badge badge-watch" id="s-watch">WATCH</div>
+    </div>
+    <div class="signal-metrics">
+      <div class="metric"><div class="metric-val green">+3.1%</div><div class="metric-lbl">24H FEE</div></div>
+      <div class="metric"><div class="metric-val cyan">$890K</div><div class="metric-lbl">TVL</div></div>
+      <div class="metric"><div class="metric-val orange">$7.6M</div><div class="metric-lbl">VOL 24H</div></div>
+      <div class="metric"><div class="metric-val violet">61</div><div class="metric-lbl">JUP SCORE</div></div>
+    </div>
+    <div class="score-row"><div class="score-label">JUP ORGANIC</div><div class="score-bar-bg"><div class="score-bar-fill fill-violet" style="width:61%"></div></div><div class="score-num" style="color:var(--neon-violet)">61</div></div>
+    <div class="score-row"><div class="score-label">SMART MONEY</div><div class="score-bar-bg"><div class="score-bar-fill fill-cyan" style="width:45%"></div></div><div class="score-num" style="color:var(--neon-cyan)">45</div></div>
+    <div class="signal-footer">
+      <div class="signal-time">🕐 17 MIN AGO</div>
+      <button class="enter-btn passive" onclick="showToast(T('viewDetail'))" id="s-view-detail">VIEW DETAIL</button>
+    </div>
+  </div>
+  <div class="section-title" id="s-sm-title">SMART MONEY</div>
+  <div class="card">
+    <div class="section-label" style="margin-bottom:8px" id="s-wallet-act">⬡ RECENT WALLET ACTIVITY</div>
+    <div class="smartmoney-row"><div class="sm-wallet">Dex8...f4Kp</div><div class="sm-action sm-entered" id="s-entered">ENTERED</div><div class="sm-amount">$42K SOL</div></div>
+    <div class="smartmoney-row"><div class="sm-wallet">9mWq...j7Lx</div><div class="sm-action sm-entered">ENTERED</div><div class="sm-amount">$18K JUP</div></div>
+    <div class="smartmoney-row"><div class="sm-wallet">Vk3n...2bRs</div><div class="sm-action sm-exited" id="s-exited">EXITED</div><div class="sm-amount">$91K RAY</div></div>
+  </div>
+</div>
+
+<!-- ====== PAGE: POSITIONS ====== -->
+<div class="page" id="page-positions">
+  <div class="header">
+    <div class="logo-wrap"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#00ffcc"><polygon points="12,2 22,8 22,16 12,22 2,16 2,8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><div><div class="logo-text">MERIDIAN</div><div class="logo-sub" id="p-sub">POSITIONS</div></div></div>
+    <button class="agent-toggle running" id="btn-toggle-2" onclick="toggleAgent()"><div class="toggle-dot"></div><span class="btn-toggle-lbl">STOP</span></button>
+  </div>
+  <div class="section-title" id="p-my-positions">MY POSITIONS</div>
+  <div class="pnl-summary">
+    <div><div class="pnl-label" id="p-total-pnl">TOTAL P&amp;L</div><div class="pnl-main">+$284</div><div class="pnl-sub" id="p-this-week">EARNED THIS WEEK</div></div>
+    <div style="text-align:right"><div class="pnl-label" id="p-fees-col">FEES COLLECTED</div><div style="font-family:'Orbitron',monospace;font-size:18px;font-weight:700;color:var(--neon-cyan)">$61.4</div><div class="pnl-sub" id="p-active-pools">2 ACTIVE POOLS</div></div>
+  </div>
+  <div class="pos-card">
+    <div class="pos-top"><div class="pos-name">SOL/USDC</div><div class="pos-pnl up">+$184.20 (+7.2%)</div></div>
+    <div class="pos-details">
+      <div class="pos-detail" id="p-invested">INVESTED<span>$2,550</span></div>
+      <div class="pos-detail" id="p-fees-earned">FEES EARNED<span style="color:var(--neon-green)">$42.1</span></div>
+      <div class="pos-detail" id="p-in-range">IN RANGE<span style="color:var(--neon-green)">✓ YES</span></div>
+    </div>
+    <div class="action-row">
+      <button class="act-btn rebalance" onclick="showToast(T('rebalanced'))" id="p-rebalance">⟳ REBALANCE</button>
+      <button class="act-btn close-pos" onclick="showToast(T('closed'))" id="p-close">✕ CLOSE</button>
+    </div>
+  </div>
+  <div class="pos-card">
+    <div class="pos-top"><div class="pos-name">RAY/USDC</div><div class="pos-pnl down">−$22.00 (−1.1%)</div></div>
+    <div class="pos-details">
+      <div class="pos-detail">INVESTED<span>$1,980</span></div>
+      <div class="pos-detail">FEES EARNED<span style="color:var(--neon-green)">$19.3</span></div>
+      <div class="pos-detail">IN RANGE<span style="color:var(--neon-orange)" id="p-edge">⚠ EDGE</span></div>
+    </div>
+    <div class="action-row">
+      <button class="act-btn rebalance" onclick="showToast(T('rebalanced'))">⟳ REBALANCE</button>
+      <button class="act-btn close-pos" onclick="showToast(T('closed'))">✕ CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PAGE: ANALYTICS ====== -->
+<div class="page" id="page-analytics">
+  <div class="header">
+    <div class="logo-wrap"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#00ffcc"><polygon points="12,2 22,8 22,16 12,22 2,16 2,8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><div><div class="logo-text">MERIDIAN</div><div class="logo-sub" id="a-sub">ANALYTICS</div></div></div>
+    <button class="agent-toggle running" id="btn-toggle-3" onclick="toggleAgent()"><div class="toggle-dot"></div><span class="btn-toggle-lbl">STOP</span></button>
+  </div>
+  <div class="section-title" id="a-performance">PERFORMANCE</div>
+  <div class="analytics-grid">
+    <div class="analytics-tile"><div class="a-val" style="color:var(--neon-green)">+$284</div><div class="a-lbl" id="a-total-pnl">TOTAL P&L</div><div class="a-change up">↑ +18.4%</div></div>
+    <div class="analytics-tile"><div class="a-val" style="color:var(--neon-cyan)">$61.4</div><div class="a-lbl" id="a-fees">FEES 7D</div><div class="a-change up">↑ +4.1%</div></div>
+    <div class="analytics-tile"><div class="a-val" style="color:var(--neon-violet)">14</div><div class="a-lbl" id="a-trades">TRADES</div><div class="a-change" style="color:var(--neon-blue)">→ 71% WIN</div></div>
+    <div class="analytics-tile"><div class="a-val" style="color:var(--neon-orange)">3.2h</div><div class="a-lbl" id="a-avgtime">AVG HOLD</div><div class="a-change down">↓ −12min</div></div>
+  </div>
+  <div class="section-title" id="a-chart-title">P&L CHART</div>
+  <div class="card"><canvas class="chart-canvas" id="pnlCanvas"></canvas></div>
+  <div class="section-title" id="a-history">HISTORY</div>
+  <div class="card" style="padding-top:8px;padding-bottom:8px">
+    <div class="history-item"><div class="hi-icon open">📥</div><div class="hi-info"><div class="hi-name">SOL/USDC</div><div class="hi-time" id="a-opened">OPENED · 2H AGO</div></div><div class="hi-pnl neu" id="a-auto-open">AUTO OPEN</div></div>
+    <div class="history-item"><div class="hi-icon rebal">⟳</div><div class="hi-info"><div class="hi-name">RAY/USDC</div><div class="hi-time" id="a-rebal-time">REBALANCED · 5H AGO</div></div><div class="hi-pnl neu">AUTO</div></div>
+    <div class="history-item"><div class="hi-icon close">📤</div><div class="hi-info"><div class="hi-name">JUP/SOL</div><div class="hi-time" id="a-closed-hist">CLOSED · 1D AGO</div></div><div class="hi-pnl up">+$94</div></div>
+    <div class="history-item"><div class="hi-icon close">📤</div><div class="hi-info"><div class="hi-name">BONK/SOL</div><div class="hi-time" id="a-closed-hist2">CLOSED · 2D AGO</div></div><div class="hi-pnl down">−$12</div></div>
+  </div>
+</div>
+
+<!-- ====== PAGE: WALLET ====== -->
+<div class="page" id="page-wallet">
+  <div class="header">
+    <div class="logo-wrap"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#00ffcc"><polygon points="12,2 22,8 22,16 12,22 2,16 2,8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><div><div class="logo-text">MERIDIAN</div><div class="logo-sub" id="w-sub">WALLET</div></div></div>
+  </div>
+
+  <!-- Not connected state -->
+  <div id="wallet-not-connected">
+    <div class="wallet-balance">
+      <div class="wb-label" id="w-total-balance">TOTAL BALANCE</div>
+      <div class="wb-amount" style="font-size:24px;color:var(--text-dim)">NOT CONNECTED</div>
+      <div class="wb-sub" id="w-connect-hint">Connect a Solana wallet to continue</div>
+    </div>
+    <button class="connect-wallet-btn" onclick="openWalletModal()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><circle cx="12" cy="14" r="2"/></svg>
+      <span id="w-connect-btn">CONNECT WALLET</span>
+    </button>
+  </div>
+
+  <!-- Connected state -->
+  <div id="wallet-connected" style="display:none">
+    <div class="wallet-balance">
+      <div class="wb-label" id="w-total-balance-2">TOTAL BALANCE</div>
+      <div class="wb-amount">$4,843</div>
+      <div class="wb-sub">Dex8...f4Kp · SOLANA</div>
+    </div>
+    <div style="text-align:center;margin-bottom:12px">
+      <span class="wallet-connected-badge"><span class="wc-dot"></span><span id="w-connected-label">CONNECTED</span></span>
+    </div>
+    <div class="wallet-actions">
+      <div class="wa-btn deposit" onclick="showToast(T('depositMsg'))"><div class="wa-icon">⬇</div><div class="wa-lbl" id="w-deposit">DEPOSIT</div></div>
+      <div class="wa-btn withdraw" onclick="showToast(T('withdrawMsg'))"><div class="wa-icon">⬆</div><div class="wa-lbl" id="w-withdraw">WITHDRAW</div></div>
+      <div class="wa-btn swap" onclick="showToast(T('swapMsg'))"><div class="wa-icon">⇄</div><div class="wa-lbl" id="w-swap">SWAP</div></div>
+    </div>
+    <div class="section-title" id="w-assets">ASSETS</div>
+    <div class="card" style="padding-top:8px;padding-bottom:8px">
+      <div class="asset-row"><div class="asset-logo sol-a">SOL</div><div class="asset-info"><div class="asset-name" style="color:var(--neon-cyan)">Solana</div><div class="asset-amount">18.42 SOL</div></div><div class="asset-val">$2,763</div></div>
+      <div class="asset-row"><div class="asset-logo usdc-a">USDC</div><div class="asset-info"><div class="asset-name" style="color:var(--neon-blue)">USD Coin</div><div class="asset-amount">1,530.00 USDC</div></div><div class="asset-val">$1,530</div></div>
+      <div class="asset-row"><div class="asset-logo jup-a">JUP</div><div class="asset-info"><div class="asset-name" style="color:var(--neon-violet)">Jupiter</div><div class="asset-amount">540.00 JUP</div></div><div class="asset-val">$550</div></div>
+    </div>
+    <div class="section-title" id="w-in-pools">IN POOLS</div>
+    <div class="card">
+      <div class="smartmoney-row"><div class="sm-wallet" style="font-size:12px;color:var(--text)">SOL/USDC</div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim)" id="w-active">ACTIVE</div><div class="sm-amount" style="color:var(--neon-green)">$2,550</div></div>
+      <div class="smartmoney-row"><div class="sm-wallet" style="font-size:12px;color:var(--text)">RAY/USDC</div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--neon-orange)" id="w-edge">⚠ EDGE</div><div class="sm-amount" style="color:var(--neon-orange)">$1,980</div></div>
+    </div>
+    <button class="modal-cancel" style="margin-top:4px" onclick="disconnectWallet()" id="w-disconnect">DISCONNECT WALLET</button>
+  </div>
+</div>
+
+<!-- ====== PAGE: SETTINGS ====== -->
+<div class="page" id="page-settings">
+  <div class="header">
+    <div class="logo-wrap"><div class="logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#00ffcc"><polygon points="12,2 22,8 22,16 12,22 2,16 2,8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><div><div class="logo-text">MERIDIAN</div><div class="logo-sub" id="st-sub">SETTINGS</div></div></div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title" id="st-language">LANGUAGE</div>
+    <div class="lang-selector">
+      <div class="lang-btn active" id="lang-en" onclick="setLang('en')"><span class="lang-flag">🇬🇧</span>ENGLISH</div>
+      <div class="lang-btn inactive" id="lang-ru" onclick="setLang('ru')"><span class="lang-flag">🇷🇺</span>РУССКИЙ</div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title" id="st-agent">AGENT</div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(57,255,20,.08)">⚡</div><div><div class="setting-label" id="st-auto-open">Auto Open Positions</div><div class="setting-sub" id="st-auto-open-sub">Agent enters pools automatically</div></div></div><label class="toggle-switch"><input type="checkbox" checked onchange="showToast(T('settingChanged'))"><span class="toggle-slider"></span></label></div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(0,180,255,.08)">⟳</div><div><div class="setting-label" id="st-auto-rebal">Auto Rebalance</div><div class="setting-sub" id="st-auto-rebal-sub">Rebalance when price exits range</div></div></div><label class="toggle-switch"><input type="checkbox" checked onchange="showToast(T('settingChanged'))"><span class="toggle-slider"></span></label></div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(255,45,85,.08)">🛡</div><div><div class="setting-label" id="st-stop-loss">Stop Loss</div><div class="setting-sub" id="st-stop-loss-sub">Close position on −15% loss</div></div></div><label class="toggle-switch"><input type="checkbox" checked onchange="showToast(T('settingChanged'))"><span class="toggle-slider"></span></label></div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(168,85,247,.08)">🔔</div><div><div class="setting-label" id="st-notif">Notifications</div><div class="setting-sub" id="st-notif-sub">Push alerts for signals & positions</div></div></div><label class="toggle-switch"><input type="checkbox" checked onchange="showToast(T('settingChanged'))"><span class="toggle-slider"></span></label></div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title" id="st-risk">RISK LEVEL</div>
+    <div class="card">
+      <div class="risk-labels"><span id="st-safe">SAFE</span><span id="st-balanced">BALANCED</span><span id="st-aggressive">AGGRESSIVE</span></div>
+      <input type="range" min="0" max="100" value="40" oninput="updateRisk(this.value)">
+      <div style="text-align:center;font-family:'Orbitron',monospace;font-size:12px;margin-top:4px" id="riskLabel">BALANCED</div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title" id="st-filters">FILTERS</div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(0,255,180,.08)">📊</div><div><div class="setting-label" id="st-min-tvl">Min TVL</div><div class="setting-sub">$500K</div></div></div><div class="setting-right">›</div></div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(255,107,0,.08)">🎯</div><div><div class="setting-label" id="st-min-jup">Min Jupiter Score</div><div class="setting-sub">60+</div></div></div><div class="setting-right">›</div></div>
+    <div class="setting-row"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(0,180,255,.08)">💎</div><div><div class="setting-label" id="st-smart-thr">Smart Money Threshold</div><div class="setting-sub">40+</div></div></div><div class="setting-right">›</div></div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-title" id="st-about">ABOUT</div>
+    <div class="setting-row" style="cursor:default"><div class="setting-row-info"><div class="setting-icon" style="background:rgba(0,255,180,.06)">⬡</div><div><div class="setting-label">MERIDIAN</div><div class="setting-sub" id="st-version">VERSION 1.0.0 BETA</div></div></div><div class="setting-right" style="color:var(--neon-cyan)">v1.0</div></div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav" id="bottomNav">
+  <div class="nav-item active" id="nav-signals" onclick="switchPage('signals')">
+    <div class="nav-icon"><svg id="nvi-signals" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00ffcc" stroke-width="2"><polygon points="12,2 22,8 22,16 12,22 2,16 2,8"/><circle cx="12" cy="12" r="3" fill="#00ffcc"/></svg></div>
+    <div class="nav-label" id="nl-signals">SIGNALS</div>
+  </div>
+  <div class="nav-item" id="nav-positions" onclick="switchPage('positions')">
+    <div class="nav-icon"><svg id="nvi-positions" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a7a6e" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><polyline points="3,9 21,9"/><polyline points="9,21 9,9"/></svg><div class="notif-badge">2</div></div>
+    <div class="nav-label" id="nl-positions">POSITIONS</div>
+  </div>
+  <div class="nav-item" id="nav-analytics" onclick="switchPage('analytics')">
+    <div class="nav-icon"><svg id="nvi-analytics" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a7a6e" stroke-width="2"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg></div>
+    <div class="nav-label" id="nl-analytics">ANALYTICS</div>
+  </div>
+  <div class="nav-item" id="nav-wallet" onclick="switchPage('wallet')">
+    <div class="nav-icon"><svg id="nvi-wallet" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a7a6e" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><circle cx="12" cy="14" r="2"/></svg></div>
+    <div class="nav-label" id="nl-wallet">WALLET</div>
+  </div>
+  <div class="nav-item" id="nav-settings" onclick="switchPage('settings')">
+    <div class="nav-icon"><svg id="nvi-settings" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4a7a6e" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
+    <div class="nav-label" id="nl-settings">SETTINGS</div>
+  </div>
+</div>
+
+<div class="toast" id="toastEl"></div>
+
+<!-- WALLET CONNECT MODAL -->
+<div class="modal-overlay" id="walletModal">
+  <div class="modal-sheet">
+    <div class="modal-title" id="wm-title">CONNECT WALLET</div>
+    <div class="modal-sub" id="wm-sub">Select a Solana wallet to connect</div>
+    <div class="wallet-option" onclick="connectWallet('Phantom')">
+      <div class="wo-icon">👻</div>
+      <div><div class="wo-name">Phantom</div><div class="wo-sub">Most popular Solana wallet</div></div>
+      <div class="wo-badge" id="wm-recommended">RECOMMENDED</div>
+    </div>
+    <div class="wallet-option" onclick="connectWallet('Solflare')">
+      <div class="wo-icon">☀️</div>
+      <div><div class="wo-name">Solflare</div><div class="wo-sub">Native Solana wallet</div></div>
+    </div>
+    <div class="wallet-option" onclick="connectWallet('Backpack')">
+      <div class="wo-icon">🎒</div>
+      <div><div class="wo-name">Backpack</div><div class="wo-sub">xNFT wallet by Coral</div></div>
+    </div>
+    <div class="wallet-option" onclick="connectWallet('OKX Wallet')">
+      <div class="wo-icon">⭕</div>
+      <div><div class="wo-name">OKX Wallet</div><div class="wo-sub">Multi-chain wallet</div></div>
+    </div>
+    <button class="modal-cancel" onclick="closeWalletModal()" id="wm-cancel">CANCEL</button>
+  </div>
+</div>
+
+<script>
+// ── STATE
+let agentRunning = true;
+let lang = 'en';
+let currentPage = 'signals';
+let walletConnected = false;
+let connectedWalletName = '';
+
+// ── TRANSLATIONS
+const L = {
+  en:{
+    stop:'STOP', start:'START',
+    agentStatus:'⬡ AGENT STATUS', scanIn:'SCAN IN',
+    sPools:'POOLS SCANNED', sSignals:'SIGNALS', sPositions:'POSITIONS',
+    sActiveSignals:'ACTIVE SIGNALS',
+    sJupOrg:'JUP ORGANIC', sSmartM:'SMART MONEY', sIlRisk:'IL RISK', sLow:'LOW',
+    sEnter:'ENTER', sWatch:'WATCH', s2min:'🕐 2 MIN AGO',
+    sEnterPool:'Opening position...', sViewDetail:'Loading pool detail...',
+    sSmTitle:'SMART MONEY', sWalletAct:'⬡ RECENT WALLET ACTIVITY',
+    sEntered:'ENTERED', sExited:'EXITED',
+    pSub:'POSITIONS', pMyPos:'MY POSITIONS', pTotalPnl:'TOTAL P&L',
+    pThisWeek:'EARNED THIS WEEK', pFeesCo:'FEES COLLECTED', pActivePools:'2 ACTIVE POOLS',
+    pInvested:'INVESTED', pFeesEarned:'FEES EARNED', pInRange:'IN RANGE', pEdge:'⚠ EDGE',
+    pRebalance:'⟳ REBALANCE', pClose:'✕ CLOSE',
+    rebalanced:'Rebalancing position...', closed:'Closing position...',
+    aSub:'ANALYTICS', aPerf:'PERFORMANCE', aChartTitle:'P&L CHART', aHistory:'HISTORY',
+    aTotalPnl:'TOTAL P&L', aFees:'FEES 7D', aTrades:'TRADES', aAvgtime:'AVG HOLD',
+    aOpened:'OPENED · 2H AGO', aAutoOpen:'AUTO OPEN',
+    aRebalTime:'REBALANCED · 5H AGO', aClosedHist:'CLOSED · 1D AGO', aClosedHist2:'CLOSED · 2D AGO',
+    wSub:'WALLET', wTotalBalance:'TOTAL BALANCE', wConnectHint:'Connect a Solana wallet to continue',
+    wConnectBtn:'CONNECT WALLET', wConnectedLabel:'CONNECTED', wDisconnect:'DISCONNECT WALLET',
+    wDeposit:'DEPOSIT', wWithdraw:'WITHDRAW', wSwap:'SWAP',
+    wAssets:'ASSETS', wInPools:'IN POOLS', wActive:'ACTIVE', wEdge:'⚠ EDGE',
+    depositMsg:'Opening deposit...', withdrawMsg:'Opening withdrawal...', swapMsg:'Opening swap...',
+    stSub:'SETTINGS', stLanguage:'LANGUAGE', stAgent:'AGENT', stRisk:'RISK LEVEL',
+    stFilters:'FILTERS', stAbout:'ABOUT', stVersion:'VERSION 1.0.0 BETA',
+    stAutoOpen:'Auto Open Positions', stAutoOpenSub:'Agent enters pools automatically',
+    stAutoRebal:'Auto Rebalance', stAutoRebalSub:'Rebalance when price exits range',
+    stStopLoss:'Stop Loss', stStopLossSub:'Close position on −15% loss',
+    stNotif:'Notifications', stNotifSub:'Push alerts for signals & positions',
+    stSafe:'SAFE', stBalanced:'BALANCED', stAggressive:'AGGRESSIVE',
+    stMinTvl:'Min TVL', stMinJup:'Min Jupiter Score', stSmartThr:'Smart Money Threshold',
+    settingChanged:'Setting updated',
+    nlSignals:'SIGNALS', nlPositions:'POSITIONS', nlAnalytics:'ANALYTICS',
+    nlWallet:'WALLET', nlSettings:'SETTINGS',
+    stoppedMsg:'⬛ AGENT STOPPED',
+    riskLow:'LOW RISK', riskBal:'BALANCED', riskHigh:'HIGH RISK',
+    enterPool:'ENTER POOL →', viewDetail:'VIEW DETAIL',
+    wmTitle:'CONNECT WALLET', wmSub:'Select a Solana wallet to connect', wmRecommended:'RECOMMENDED', wmCancel:'CANCEL',
+    disconnected:'Wallet disconnected',
+  },
+  ru:{
+    stop:'СТОП', start:'СТАРТ',
+    agentStatus:'⬡ СТАТУС АГЕНТА', scanIn:'СКАН ЧЕРЕЗ',
+    sPools:'ПУЛОВ СКАН.', sSignals:'СИГНАЛЫ', sPositions:'ПОЗИЦИИ',
+    sActiveSignals:'АКТИВНЫЕ СИГНАЛЫ',
+    sJupOrg:'JUP ОРГАНИКА', sSmartM:'УМНЫЕ $', sIlRisk:'РИСК IL', sLow:'НИЗКИЙ',
+    sEnter:'ВОЙТИ', sWatch:'СЛЕДИТЬ', s2min:'🕐 2 МИН НАЗАД',
+    sEnterPool:'Открываю позицию...', sViewDetail:'Загружаю детали...',
+    sSmTitle:'УМНЫЕ ДЕНЬГИ', sWalletAct:'⬡ АКТИВНОСТЬ КОШЕЛЬКОВ',
+    sEntered:'ВОШЁЛ', sExited:'ВЫШЕЛ',
+    pSub:'ПОЗИЦИИ', pMyPos:'МОИ ПОЗИЦИИ', pTotalPnl:'ИТОГО P&L',
+    pThisWeek:'ЗАРАБОТАНО ЗА НЕДЕЛЮ', pFeesCo:'СБОРЫ ПОЛУЧЕНЫ', pActivePools:'2 АКТИВНЫХ ПУЛА',
+    pInvested:'ВЛОЖЕНО', pFeesEarned:'СБОРЫ', pInRange:'В ДИАПАЗОНЕ', pEdge:'⚠ НА ГРАНИ',
+    pRebalance:'⟳ РЕБАЛАНС', pClose:'✕ ЗАКРЫТЬ',
+    rebalanced:'Ребалансирую...', closed:'Закрываю позицию...',
+    aSub:'АНАЛИТИКА', aPerf:'ДОХОДНОСТЬ', aChartTitle:'ГРАФИК P&L', aHistory:'ИСТОРИЯ',
+    aTotalPnl:'ИТОГО P&L', aFees:'СБОРЫ 7Д', aTrades:'СДЕЛКИ', aAvgtime:'СР. УДЕРЖАНИЕ',
+    aOpened:'ОТКРЫТА · 2Ч НАЗАД', aAutoOpen:'АВТ. ОТКРЫТИЕ',
+    aRebalTime:'РЕБАЛАНС · 5Ч НАЗАД', aClosedHist:'ЗАКРЫТА · 1Д НАЗАД', aClosedHist2:'ЗАКРЫТА · 2Д НАЗАД',
+    wSub:'КОШЕЛЁК', wTotalBalance:'ОБЩИЙ БАЛАНС', wConnectHint:'Подключите Solana кошелёк',
+    wConnectBtn:'ПОДКЛЮЧИТЬ КОШЕЛЁК', wConnectedLabel:'ПОДКЛЮЧЁН', wDisconnect:'ОТКЛЮЧИТЬ КОШЕЛЁК',
+    wDeposit:'ПОПОЛНИТЬ', wWithdraw:'ВЫВЕСТИ', wSwap:'ОБМЕНЯТЬ',
+    wAssets:'АКТИВЫ', wInPools:'В ПУЛАХ', wActive:'АКТИВЕН', wEdge:'⚠ НА ГРАНИ',
+    depositMsg:'Открываю депозит...', withdrawMsg:'Открываю вывод...', swapMsg:'Открываю обмен...',
+    stSub:'НАСТРОЙКИ', stLanguage:'ЯЗЫК', stAgent:'АГЕНТ', stRisk:'УРОВЕНЬ РИСКА',
+    stFilters:'ФИЛЬТРЫ', stAbout:'О ПРОГРАММЕ', stVersion:'ВЕРСИЯ 1.0.0 БЕТА',
+    stAutoOpen:'Авто открытие', stAutoOpenSub:'Агент входит в пулы автоматически',
+    stAutoRebal:'Авто ребаланс', stAutoRebalSub:'Ребаланс при выходе цены из диапазона',
+    stStopLoss:'Стоп-лосс', stStopLossSub:'Закрытие позиции при убытке −15%',
+    stNotif:'Уведомления', stNotifSub:'Push-уведомления о сигналах и позициях',
+    stSafe:'БЕЗОПАСНО', stBalanced:'БАЛАНС', stAggressive:'АГРЕССИВНО',
+    stMinTvl:'Мин. TVL', stMinJup:'Мин. оценка Jupiter', stSmartThr:'Порог умных денег',
+    settingChanged:'Настройка обновлена',
+    nlSignals:'СИГНАЛЫ', nlPositions:'ПОЗИЦИИ', nlAnalytics:'АНАЛИТИКА',
+    nlWallet:'КОШЕЛЁК', nlSettings:'НАСТРОЙКИ',
+    stoppedMsg:'⬛ АГЕНТ ОСТАНОВЛЕН',
+    riskLow:'НИЗКИЙ РИСК', riskBal:'БАЛАНС', riskHigh:'ВЫСОКИЙ РИСК',
+    enterPool:'ВОЙТИ В ПУЛ →', viewDetail:'ПОДРОБНЕЕ',
+    wmTitle:'ПОДКЛЮЧИТЬ КОШЕЛЁК', wmSub:'Выберите Solana кошелёк', wmRecommended:'РЕКОМЕНДУЕТСЯ', wmCancel:'ОТМЕНА',
+    disconnected:'Кошелёк отключён',
+  }
+};
+function T(k){ return L[lang][k] || k; }
+
+// ── NAVIGATION
+const PAGES = ['signals','positions','analytics','wallet','settings'];
+function switchPage(name) {
+  PAGES.forEach(p => {
+    document.getElementById('page-'+p).classList.toggle('active', p===name);
+    document.getElementById('nav-'+p).classList.toggle('active', p===name);
+    const nvi = document.getElementById('nvi-'+p);
+    if (nvi) nvi.setAttribute('stroke', p===name ? '#00ffcc' : '#4a7a6e');
+    const nl = document.getElementById('nl-'+p);
+    if (nl) nl.style.color = p===name ? 'var(--neon-cyan)' : 'var(--text-dim)';
+  });
+  const sigCircle = document.querySelector('#nvi-signals circle');
+  if (sigCircle) sigCircle.setAttribute('fill', name==='signals' ? '#00ffcc' : '#4a7a6e');
+  currentPage = name;
+  if (name==='analytics') setTimeout(drawChart, 50);
+}
+
+// ── AGENT TOGGLE
+function toggleAgent() {
+  agentRunning = !agentRunning;
+  document.querySelectorAll('.agent-toggle').forEach(btn => {
+    btn.className = 'agent-toggle ' + (agentRunning ? 'running' : 'stopped');
+  });
+  document.querySelectorAll('.btn-toggle-lbl').forEach(el => {
+    el.textContent = agentRunning ? T('stop') : T('start');
+  });
+  const overlay = document.getElementById('stoppedOverlay');
+  const timerBar = document.getElementById('timerBar');
+  if (agentRunning) {
+    overlay.classList.remove('show');
+    timerBar.style.animationPlayState = 'running';
+    timerBar.style.background = 'linear-gradient(90deg,var(--neon-blue),var(--neon-cyan))';
+    showToast(lang==='ru' ? '▶ Агент запущен' : '▶ Agent started');
+  } else {
+    overlay.classList.add('show');
+    timerBar.style.animationPlayState = 'paused';
+    timerBar.style.background = 'rgba(255,255,255,0.08)';
+    showToast(lang==='ru' ? '⬛ Агент остановлен' : '⬛ Agent stopped');
+  }
+}
+
+// ── LANGUAGE
+function setLang(l) {
+  lang = l;
+  document.getElementById('lang-en').className = 'lang-btn '+(l==='en'?'active':'inactive');
+  document.getElementById('lang-ru').className = 'lang-btn '+(l==='ru'?'active':'inactive');
+  applyLang();
+  showToast(l==='ru' ? 'Язык: Русский' : 'Language: English');
+}
+
+const ID_MAP = [
+  ['lbl-agent-status','agentStatus'],
+  ['s-pools','sPools'],['s-signals','sSignals'],['s-positions','sPositions'],
+  ['s-active-signals','sActiveSignals'],
+  ['s-jup-org','sJupOrg'],['s-smart-m','sSmartM'],['s-il-risk','sIlRisk'],['s-low','sLow'],
+  ['s-enter','sEnter'],['s-watch','sWatch'],['s-2min','s2min'],
+  ['s-sm-title','sSmTitle'],['s-wallet-act','sWalletAct'],
+  ['s-entered','sEntered'],['s-exited','sExited'],
+  ['p-sub','pSub'],['p-my-positions','pMyPos'],['p-total-pnl','pTotalPnl'],
+  ['p-this-week','pThisWeek'],['p-fees-col','pFeesCo'],['p-active-pools','pActivePools'],
+  ['p-edge','pEdge'],['p-rebalance','pRebalance'],['p-close','pClose'],
+  ['a-sub','aSub'],['a-performance','aPerf'],['a-chart-title','aChartTitle'],['a-history','aHistory'],
+  ['a-total-pnl','aTotalPnl'],['a-fees','aFees'],['a-trades','aTrades'],['a-avgtime','aAvgtime'],
+  ['a-opened','aOpened'],['a-auto-open','aAutoOpen'],
+  ['a-rebal-time','aRebalTime'],['a-closed-hist','aClosedHist'],['a-closed-hist2','aClosedHist2'],
+  ['w-sub','wSub'],['w-total-balance','wTotalBalance'],['w-total-balance-2','wTotalBalance'],
+  ['w-connect-hint','wConnectHint'],['w-connect-btn','wConnectBtn'],
+  ['w-connected-label','wConnectedLabel'],['w-disconnect','wDisconnect'],
+  ['w-deposit','wDeposit'],['w-withdraw','wWithdraw'],['w-swap','wSwap'],
+  ['w-assets','wAssets'],['w-in-pools','wInPools'],['w-active','wActive'],['w-edge','wEdge'],
+  ['st-sub','stSub'],['st-language','stLanguage'],['st-agent','stAgent'],
+  ['st-risk','stRisk'],['st-filters','stFilters'],['st-about','stAbout'],['st-version','stVersion'],
+  ['st-auto-open','stAutoOpen'],['st-auto-open-sub','stAutoOpenSub'],
+  ['st-auto-rebal','stAutoRebal'],['st-auto-rebal-sub','stAutoRebalSub'],
+  ['st-stop-loss','stStopLoss'],['st-stop-loss-sub','stStopLossSub'],
+  ['st-notif','stNotif'],['st-notif-sub','stNotifSub'],
+  ['st-safe','stSafe'],['st-balanced','stBalanced'],['st-aggressive','stAggressive'],
+  ['st-min-tvl','stMinTvl'],['st-min-jup','stMinJup'],['st-smart-thr','stSmartThr'],
+  ['nl-signals','nlSignals'],['nl-positions','nlPositions'],['nl-analytics','nlAnalytics'],
+  ['nl-wallet','nlWallet'],['nl-settings','nlSettings'],
+  ['stoppedMsg','stoppedMsg'],
+  ['s-enter-pool-btn','enterPool'],['s-view-detail','viewDetail'],
+  ['wm-title','wmTitle'],['wm-sub','wmSub'],['wm-recommended','wmRecommended'],['wm-cancel','wmCancel'],
+];
+function applyLang() {
+  ID_MAP.forEach(([id,key])=>{ const el=document.getElementById(id); if(el) el.textContent=T(key); });
+  document.querySelectorAll('.btn-toggle-lbl').forEach(el=>{ el.textContent=agentRunning?T('stop'):T('start'); });
+  updateRisk(document.querySelector('input[type=range]').value);
+}
+
+// ── CHIP FILTER
+function selectChip(el) {
+  document.querySelectorAll('.chip').forEach(c=>{ c.className='chip unselected'; });
+  el.className='chip selected';
+}
+
+// ── TOAST
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toastEl');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+// ── RISK SLIDER
+function updateRisk(v) {
+  v = parseInt(v);
+  const el = document.getElementById('riskLabel');
+  if (!el) return;
+  if (v < 33) el.textContent = T('riskLow');
+  else if (v < 67) el.textContent = T('riskBal');
+  else el.textContent = T('riskHigh');
+}
+
+// ── SCAN TIMER COUNTDOWN
+let scanSeconds = 1104; // 18:24
+function updateScanTimer() {
+  if (!agentRunning) return;
+  scanSeconds--;
+  if (scanSeconds < 0) scanSeconds = 1800;
+  const m = Math.floor(scanSeconds/60).toString().padStart(2,'0');
+  const s = (scanSeconds%60).toString().padStart(2,'0');
+  const el = document.getElementById('scanTimerText');
+  if (el) el.textContent = T('scanIn') + ' ' + m + ':' + s;
+}
+setInterval(updateScanTimer, 1000);
+
+// ── P&L CHART
+function drawChart() {
+  const canvas = document.getElementById('pnlCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+
+  const data = [0, 20, 15, 45, 38, 60, 52, 80, 70, 95, 88, 110, 100, 130, 120, 150, 140, 162, 155, 178, 165, 190, 180, 210, 200, 220, 210, 235, 225, 250, 240, 262, 255, 270, 260, 280, 265, 284];
+  const mn = Math.min(...data), mx = Math.max(...data);
+  const pad = 16;
+  const xStep = (w - pad*2) / (data.length - 1);
+  const yRange = mx - mn || 1;
+  const py = v => h - pad - ((v - mn) / yRange) * (h - pad*2);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,255,180,0.05)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (h - pad*2) * i / 4;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+  }
+
+  // Area fill
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(57,255,20,0.18)');
+  grad.addColorStop(1, 'rgba(57,255,20,0)');
+  ctx.beginPath();
+  ctx.moveTo(pad, py(data[0]));
+  data.forEach((v,i) => { if(i>0) ctx.lineTo(pad + i*xStep, py(v)); });
+  ctx.lineTo(pad + (data.length-1)*xStep, h-pad);
+  ctx.lineTo(pad, h-pad);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(pad, py(data[0]));
+  data.forEach((v,i) => { if(i>0) ctx.lineTo(pad + i*xStep, py(v)); });
+  ctx.strokeStyle = '#39ff14';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#39ff14';
+  ctx.shadowBlur = 6;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Last point dot
+  const lx = pad + (data.length-1)*xStep, ly = py(data[data.length-1]);
+  ctx.beginPath();
+  ctx.arc(lx, ly, 4, 0, Math.PI*2);
+  ctx.fillStyle = '#39ff14';
+  ctx.shadowColor = '#39ff14';
+  ctx.shadowBlur = 10;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Labels
+  ctx.font = '9px "Share Tech Mono", monospace';
+  ctx.fillStyle = 'rgba(74,122,110,0.8)';
+  ctx.fillText('$0', pad, h - 2);
+  ctx.fillStyle = 'rgba(57,255,20,0.8)';
+  ctx.fillText('+$284', pad, pad + 10);
+}
+
+// ── WALLET CONNECT
+function openWalletModal() {
+  document.getElementById('walletModal').classList.add('show');
+}
+function closeWalletModal() {
+  document.getElementById('walletModal').classList.remove('show');
+}
+function connectWallet(name) {
+  closeWalletModal();
+  walletConnected = true;
+  connectedWalletName = name;
+  document.getElementById('wallet-not-connected').style.display = 'none';
+  document.getElementById('wallet-connected').style.display = 'block';
+  showToast((lang==='ru' ? '✓ ' + name + ' подключён' : '✓ ' + name + ' connected'));
+}
+function disconnectWallet() {
+  walletConnected = false;
+  connectedWalletName = '';
+  document.getElementById('wallet-not-connected').style.display = 'block';
+  document.getElementById('wallet-connected').style.display = 'none';
+  showToast(T('disconnected'));
+}
+
+// Close modal on overlay click
+document.getElementById('walletModal').addEventListener('click', function(e) {
+  if (e.target === this) closeWalletModal();
+});
+
+// ── INIT
+applyLang();
+drawChart();
+</script>
+</body>
+</html>

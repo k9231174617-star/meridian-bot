@@ -6,11 +6,15 @@ declare module "bn.js" {
 declare module "@meteora-ag/dlmm" {
   const DLMM: any;
   export default DLMM;
+  export const DEFAULT_BIN_PER_POSITION: any;
   export const StrategyType: any;
   export function binDeltaToMinMaxBinId(...args: any[]): any;
   export function getPositionLowerUpperBinIdWithLiquidity(...args: any[]): any;
   export function getTokenDecimals(...args: any[]): any;
   export function getTokensMintFromPoolAddress(...args: any[]): any;
+  export function deriveBinArrayBitmapExtension(...args: any[]): any;
+  export function deriveReserve(...args: any[]): any;
+  export function getBinArrayKeysCoverage(...args: any[]): any;
   export interface LbPosition {
     [key: string]: any;
   }

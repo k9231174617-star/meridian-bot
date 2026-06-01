@@ -1,34 +1,21 @@
-// @ts-nocheck
-import { createRequire } from "node:module";
 import BN from "bn.js";
-import { Connection, Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import type { ExecutionResult, TradeIntent } from "./domain.js";
-
-type Bn = InstanceType<typeof BN>;
-type MeteoraSdk = typeof import("@meteora-ag/dlmm");
-type LbPosition = {
-  publicKey: PublicKey;
-  positionData: {
-    totalXAmount: string;
-    totalYAmount: string;
-    lowerBinId?: number;
-    upperBinId?: number;
-  };
-};
-
-const require = createRequire(import.meta.url);
-
-async function loadMeteoraSdk(): Promise<MeteoraSdk> {
-  return require("@meteora-ag/dlmm") as MeteoraSdk;
-}
-
-const DEFAULT_CONFIRMATION_TIMEOUT_MS = 45_000;
-const DEFAULT_DLMM_POSITION_WIDTH = 69;
-const MAX_TRANSACTION_ATTEMPTS = 3;
+import {
+  ExecutionOrchestrator,
+  CommandType,
+  PoolProtocol,
+  derive_position_pda,
+  METEORA_DLMM_PROGRAM,
+  type ExecutionCommand,
+  type PositionInfo,
+} from "./execution/index.js";
 
 export type ExecutionClient = {
   execute(intent: TradeIntent): Promise<ExecutionResult>;
 };
+
+const DEFAULT_DLMM_POSITION_WIDTH = 8;
 
 export class PaperExecutionClient implements ExecutionClient {
   async execute(intent: TradeIntent): Promise<ExecutionResult> {
@@ -64,6 +51,8 @@ export class DryRunExecutionClient implements ExecutionClient {
 }
 
 export class JupiterSwapExecutionClient implements ExecutionClient {
+  private orchestrator: ExecutionOrchestrator | null = null;
+
   constructor(
     private readonly rpcUrl: string,
     private readonly secretKey: string,
@@ -75,85 +64,40 @@ export class JupiterSwapExecutionClient implements ExecutionClient {
       return this.executeSwap(intent);
     }
 
-    if (intent.action === "ADD_LIQUIDITY" || intent.action === "REMOVE_LIQUIDITY") {
-      return this.executeDlmm(intent);
+    if (intent.action === "ADD_LIQUIDITY" || intent.action === "REMOVE_LIQUIDITY" || intent.action === "REBALANCE") {
+      return this.executeMeteora(intent);
     }
 
-    return {
-      intentId: intent.id,
-      status: "rejected",
-      filledUsd: 0,
-      feesUsd: 0,
-      slippageUsd: 0,
-      executedAt: new Date().toISOString(),
-      reason: `Unsupported live action: ${intent.action}`,
-    };
+    return unsupportedExecution(intent, `Unsupported live action: ${intent.action}`);
   }
 
   private async executeSwap(intent: TradeIntent): Promise<ExecutionResult> {
-    const connection = new Connection(this.rpcUrl, "confirmed");
-    const keypair = loadKeypair(this.secretKey);
+    const orchestrator = await this.getOrchestrator();
+    const command = buildSwapCommand(intent, loadKeypair(this.secretKey).publicKey);
+    const result = await orchestrator.execute(command);
 
-    const signatures = await sendExecutionPlan(
-      connection,
-      async () => {
-        const quote = await fetchQuote(intent, this.jupiterApiKey);
-        const swapTransaction = await buildSwapTransaction(
-          quote,
-          keypair.publicKey.toBase58(),
-          intent.priorityFeeMicroLamports,
-          this.jupiterApiKey,
-        );
-        return VersionedTransaction.deserialize(Buffer.from(swapTransaction, "base64"));
-      },
-      [keypair],
-      {
-        label: "Jupiter swap",
-      },
-    );
-
-    return {
-      intentId: intent.id,
-      status: "filled",
-      txSignature: signatures.join(","),
-      filledUsd: round2(intent.amountUsd),
-      feesUsd: round2(Math.max(0.05, intent.amountUsd * 0.002)),
-      slippageUsd: round2(intent.amountUsd * (intent.slippageBps / 10_000)),
-      executedAt: new Date().toISOString(),
-      reason: "Live Jupiter swap submitted",
-    };
+    return mapOrchestratorResult(intent, result, intent.amountUsd, "Live Jupiter swap submitted");
   }
 
-  private async executeDlmm(intent: TradeIntent): Promise<ExecutionResult> {
+  private async executeMeteora(intent: TradeIntent): Promise<ExecutionResult> {
     const connection = new Connection(this.rpcUrl, "confirmed");
     const user = loadKeypair(this.secretKey);
-    const poolAddress = parsePublicKey(intent.poolAddress, "BOT intent poolAddress");
-    const meteora = await loadMeteoraSdk();
-    const dlmmHelpers = meteora as unknown as {
-      getPositionLowerUpperBinIdWithLiquidity: (
-        position: LbPosition["positionData"],
-      ) => { lowerBinId: Bn; upperBinId: Bn } | null;
-      getTokenDecimals: (connection: Connection, mint: PublicKey) => Promise<number>;
-      getTokensMintFromPoolAddress: (
-        connection: Connection,
-        poolAddress: string,
-        opt?: { cluster?: "mainnet-beta" | "devnet" | "testnet" | "localhost"; programId?: PublicKey },
-      ) => Promise<{ tokenXMint: PublicKey; tokenYMint: PublicKey }>;
-    };
+    const orchestrator = await this.getOrchestrator();
+    const meteora = (await import("@meteora-ag/dlmm")) as typeof import("@meteora-ag/dlmm");
     const DLMM = meteora.default;
-    const StrategyType = meteora.StrategyType;
-    const dlmmPool = await DLMM.create(connection, poolAddress);
 
+    const poolAddress = parsePublicKey(intent.poolAddress, "BOT intent poolAddress");
+    const dlmmPool = await DLMM.create(connection, poolAddress);
     const { activeBin, userPositions } = await dlmmPool.getPositionsByUserAndLbPair(user.publicKey);
     const activeBinId = activeBin.binId;
 
-    const { tokenXMint, tokenYMint } = await dlmmHelpers.getTokensMintFromPoolAddress(connection, intent.poolAddress, {
+    const { tokenXMint, tokenYMint } = await meteora.getTokensMintFromPoolAddress(connection, intent.poolAddress, {
       cluster: inferCluster(this.rpcUrl),
     });
 
     const [tokenXDecimals, tokenYDecimals, tokenPrices] = await Promise.all([
-      dlmmHelpers.getTokenDecimals(connection, tokenXMint),
-      dlmmHelpers.getTokenDecimals(connection, tokenYMint),
+      meteora.getTokenDecimals(connection, tokenXMint),
+      meteora.getTokenDecimals(connection, tokenYMint),
       fetchTokenUsdPrices([tokenXMint.toBase58(), tokenYMint.toBase58()], this.jupiterApiKey),
     ]);
 
@@ -168,264 +112,363 @@ export class JupiterSwapExecutionClient implements ExecutionClient {
       return unsupportedExecution(intent, "Could not resolve token Y USD price for live Meteora execution");
     }
 
-    const slippagePct = Math.max(0.01, intent.slippageBps / 100);
+    const existingPosition = selectPositionForAction(userPositions, activeBinId, intent.action !== "ADD_LIQUIDITY", {
+      getPositionLowerUpperBinIdWithLiquidity: meteora.getPositionLowerUpperBinIdWithLiquidity,
+    });
 
-    if (intent.action === "ADD_LIQUIDITY") {
-      const position = selectPositionForAdd(userPositions, activeBinId, dlmmHelpers);
-      const amounts = splitUsdCapital(intent.amountUsd, tokenXPriceUsd, tokenYPriceUsd, tokenXDecimals, tokenYDecimals);
-      if (!amounts) {
-        return unsupportedExecution(intent, "Could not split capital into valid token amounts for live Meteora add");
-      }
-      const positionKeypair = position ? null : Keypair.generate();
+    const amounts = splitUsdCapital(
+      intent.amountUsd,
+      tokenXPriceUsd,
+      tokenYPriceUsd,
+      tokenXDecimals,
+      tokenYDecimals,
+    );
 
-      const buildTransaction = async () => {
-        if (position) {
-          const range = getPositionRange(position, dlmmHelpers);
-          if (!range) {
-            throw new Error("Unable to determine existing Meteora position range");
-          }
-
-          return dlmmPool.addLiquidityByStrategy({
-            positionPubKey: position.publicKey,
-            totalXAmount: amounts.totalXAmount,
-            totalYAmount: amounts.totalYAmount,
-            strategy: {
-              minBinId: range.lowerBinId,
-              maxBinId: range.upperBinId,
-              strategyType: StrategyType.Spot,
-            },
-            user: user.publicKey,
-            slippage: slippagePct,
-          });
-        }
-
-        if (!positionKeypair) {
-          throw new Error("Expected a fresh position keypair for live Meteora initialization");
-        }
-
-        return dlmmPool.initializePositionAndAddLiquidityByStrategy({
-          positionPubKey: positionKeypair.publicKey,
-          totalXAmount: amounts.totalXAmount,
-          totalYAmount: amounts.totalYAmount,
-          strategy: {
-            minBinId: activeBinId - defaultHalfWidth(DEFAULT_DLMM_POSITION_WIDTH),
-            maxBinId: activeBinId + defaultUpperOffset(DEFAULT_DLMM_POSITION_WIDTH),
-            strategyType: StrategyType.Spot,
-          },
-          user: user.publicKey,
-          slippage: slippagePct,
-          });
-      };
-
-      const signers = position ? [user] : [user, positionKeypair!];
-      const signatures = await sendExecutionPlan(connection, buildTransaction, signers, {
-        label: "Meteora add liquidity",
-      });
-
-      return {
-        intentId: intent.id,
-        status: "filled",
-        txSignature: signatures.join(","),
-        filledUsd: round2(intent.amountUsd),
-        feesUsd: round2(Math.max(0.05, intent.amountUsd * 0.0015)),
-        slippageUsd: round2(intent.amountUsd * (intent.slippageBps / 10_000)),
-        executedAt: new Date().toISOString(),
-        reason: position
-          ? "Live Meteora add liquidity submitted to an existing position"
-          : "Live Meteora add liquidity submitted to a new position",
-      };
+    if (!amounts) {
+      return unsupportedExecution(intent, "Could not split capital into valid token amounts for live Meteora execution");
     }
 
-    const position = selectPositionForRemoval(userPositions, activeBinId, dlmmHelpers);
-    if (!position) {
+    const lowerBinId = existingPosition?.positionData.lowerBinId ?? activeBinId - defaultHalfWidth(DEFAULT_DLMM_POSITION_WIDTH);
+    const upperBinId = existingPosition?.positionData.upperBinId ?? activeBinId + defaultUpperOffset(DEFAULT_DLMM_POSITION_WIDTH);
+    const width = Math.max(1, upperBinId - lowerBinId);
+    const positionPubkey = existingPosition?.publicKey ?? derivePositionPda(poolAddress, user.publicKey, lowerBinId, width);
+    const positionRange = { lowerBinId, upperBinId };
+    const positionInfo = await buildPositionInfo({
+      connection,
+      user,
+      poolAddress,
+      tokenXMint,
+      tokenYMint,
+      lowerBinId: positionRange.lowerBinId,
+      upperBinId: positionRange.upperBinId,
+      positionPubkey,
+      meteora,
+    });
+
+    if (intent.action === "REBALANCE") {
+      if (!existingPosition) {
+        return unsupportedExecution(intent, "No live Meteora position was found for this wallet and pool");
+      }
+
+      const rebalanceResult = await orchestrator.execute({
+        cmdType: CommandType.REBALANCE,
+        protocol: PoolProtocol.METEORA_DLMM,
+        poolId: poolAddress,
+        wallet: user.publicKey,
+        positionInfo,
+        tickLower: positionRange.lowerBinId,
+        tickUpper: positionRange.upperBinId,
+        amountA: Number(amounts.totalXAmount.toString()),
+        amountB: Number(amounts.totalYAmount.toString()),
+        inputMint: tokenXMint,
+        outputMint: tokenYMint,
+        amountIn: Number(amounts.totalXAmount.toString()),
+        slippageBps: intent.slippageBps,
+        priorityFeeMicrolamports: intent.priorityFeeMicroLamports,
+        computeUnits: 650_000,
+      });
+
+      if (!rebalanceResult.success) {
+        return unsupportedExecution(intent, rebalanceResult.error ?? "Failed to rebalance Meteora position");
+      }
+
+      return mapOrchestratorResult(intent, rebalanceResult, intent.amountUsd, "Live Meteora rebalance submitted");
+    }
+
+    if (intent.action === "ADD_LIQUIDITY") {
+      if (!existingPosition) {
+        const openResult = await orchestrator.execute({
+          cmdType: CommandType.OPEN_POSITION,
+          protocol: PoolProtocol.METEORA_DLMM,
+          poolId: poolAddress,
+          wallet: user.publicKey,
+          positionInfo,
+          tickLower: positionRange.lowerBinId,
+          tickUpper: positionRange.upperBinId,
+          amountA: Number(amounts.totalXAmount.toString()),
+          amountB: Number(amounts.totalYAmount.toString()),
+          slippageBps: intent.slippageBps,
+          priorityFeeMicrolamports: intent.priorityFeeMicroLamports,
+          computeUnits: 450_000,
+        });
+
+        if (!openResult.success) {
+      return unsupportedExecution(intent, openResult.error ?? "Failed to open Meteora position");
+        }
+      }
+
+      const addResult = await orchestrator.execute({
+        cmdType: CommandType.ADD_LIQUIDITY,
+        protocol: PoolProtocol.METEORA_DLMM,
+        poolId: poolAddress,
+        wallet: user.publicKey,
+        positionInfo,
+        tickLower: positionRange.lowerBinId,
+        tickUpper: positionRange.upperBinId,
+        amountA: Number(amounts.totalXAmount.toString()),
+        amountB: Number(amounts.totalYAmount.toString()),
+        slippageBps: intent.slippageBps,
+        priorityFeeMicrolamports: intent.priorityFeeMicroLamports,
+        computeUnits: 450_000,
+      });
+
+      if (!addResult.success) {
+        return unsupportedExecution(intent, addResult.error ?? "Failed to add Meteora liquidity");
+      }
+
+      return mapOrchestratorResult(intent, addResult, intent.amountUsd, existingPosition ? "Live Meteora add liquidity submitted to an existing position" : "Live Meteora add liquidity submitted to a new position");
+    }
+
+    if (!existingPosition) {
       return unsupportedExecution(intent, "No live Meteora position was found for this wallet and pool");
     }
 
-    const range = getPositionRange(position, dlmmHelpers);
-    if (!range) {
-      return unsupportedExecution(intent, "The live Meteora position does not expose a valid liquidity range");
-    }
-
-    const buildTransaction = async () =>
-      dlmmPool.removeLiquidity({
-        user: user.publicKey,
-        position: position.publicKey,
-        fromBinId: range.lowerBinId,
-        toBinId: range.upperBinId,
-        bps: new BN(10_000),
-        shouldClaimAndClose: true,
-      });
-
-    const signatures = await sendExecutionPlan(connection, buildTransaction, [user], {
-      label: "Meteora remove liquidity",
+    const removeResult = await orchestrator.execute({
+      cmdType: CommandType.REMOVE_LIQUIDITY,
+      protocol: PoolProtocol.METEORA_DLMM,
+      poolId: poolAddress,
+      wallet: user.publicKey,
+      positionInfo,
+      tickLower: positionRange.lowerBinId,
+      tickUpper: positionRange.upperBinId,
+      amountA: Number(amounts.totalXAmount.toString()),
+      amountB: Number(amounts.totalYAmount.toString()),
+      slippageBps: intent.slippageBps,
+      priorityFeeMicrolamports: intent.priorityFeeMicroLamports,
+      computeUnits: 450_000,
     });
 
-    return {
-      intentId: intent.id,
-      status: "filled",
-      txSignature: signatures.join(","),
-      filledUsd: round2(intent.amountUsd),
-      feesUsd: round2(Math.max(0.05, intent.amountUsd * 0.0015)),
-      slippageUsd: round2(intent.amountUsd * (intent.slippageBps / 10_000)),
-      executedAt: new Date().toISOString(),
-      reason: "Live Meteora remove liquidity submitted",
-    };
+    if (!removeResult.success) {
+      return unsupportedExecution(intent, removeResult.error ?? "Failed to remove Meteora liquidity");
+    }
+
+    return mapOrchestratorResult(intent, removeResult, intent.amountUsd, "Live Meteora remove liquidity submitted");
+  }
+
+  private async getOrchestrator() {
+    if (!this.orchestrator) {
+      const connection = new Connection(this.rpcUrl, "confirmed");
+      const keypair = loadKeypair(this.secretKey);
+      this.orchestrator = new ExecutionOrchestrator(connection, keypair, 3, true);
+    }
+    return this.orchestrator;
   }
 }
 
-async function sendExecutionPlan(
-  connection: Connection,
-  buildPlan: () => Promise<Transaction | VersionedTransaction | Array<Transaction | VersionedTransaction>>,
-  signers: Keypair[],
-  options?: { label?: string },
-): Promise<string[]> {
-  const maxPlanAttempts = MAX_TRANSACTION_ATTEMPTS;
-
-  for (let attempt = 1; attempt <= maxPlanAttempts; attempt += 1) {
-    const plan = await buildPlan();
-    const transactions = Array.isArray(plan) ? plan : [plan];
-    const signatures: string[] = [];
-
-    try {
-      for (const transaction of transactions) {
-        const signature = await sendPreparedTransaction(connection, transaction, signers, options);
-        signatures.push(signature);
-      }
-
-      return signatures;
-    } catch (error) {
-      if (transactions.length > 1 || !isRetryableExecutionError(error) || attempt === maxPlanAttempts) {
-        throw error;
-      }
-      await delay(backoffMs(attempt));
-    }
-  }
-
-  throw new Error(`Execution failed${options?.label ? `: ${options.label}` : ""}`);
+function buildSwapCommand(intent: TradeIntent, wallet: PublicKey): ExecutionCommand {
+  return {
+    cmdType: CommandType.SWAP,
+    protocol: PoolProtocol.METEORA_DLMM,
+    poolId: parsePublicKey(intent.poolAddress, "BOT intent poolAddress"),
+    wallet,
+    positionInfo: {
+      positionNftMint: wallet,
+      positionNftAccount: wallet,
+      extra: {},
+    },
+    inputMint: toMint(intent.symbolIn ?? "SOL"),
+    outputMint: toMint(intent.symbolOut ?? "USDC"),
+    amountIn: Math.max(1, Math.round(intent.amountUsd * 1_000_000)),
+    slippageBps: intent.slippageBps,
+    priorityFeeMicrolamports: intent.priorityFeeMicroLamports,
+    computeUnits: 400_000,
+  };
 }
 
-async function sendPreparedTransaction(
-  connection: Connection,
-  transaction: Transaction | VersionedTransaction,
-  signers: Keypair[],
-  options?: { label?: string },
-): Promise<string> {
-  const retryableAttempts = transaction instanceof Transaction ? MAX_TRANSACTION_ATTEMPTS : 2;
-  let lastError: unknown;
+async function buildPositionInfo(params: {
+  connection: Connection;
+  user: Keypair;
+  poolAddress: PublicKey;
+  tokenXMint: PublicKey;
+  tokenYMint: PublicKey;
+  lowerBinId: number;
+  upperBinId: number;
+  positionPubkey: PublicKey;
+  meteora: typeof import("@meteora-ag/dlmm");
+}): Promise<PositionInfo> {
+  const [binArrayBitmap, binArrayKeys, reserveX, reserveY] = await Promise.all([
+    Promise.resolve(params.meteora.deriveBinArrayBitmapExtension(params.poolAddress, METEORA_DLMM_PROGRAM)[0]),
+    Promise.resolve(params.meteora.getBinArrayKeysCoverage(
+      new BN(params.lowerBinId),
+      new BN(params.upperBinId),
+      params.poolAddress,
+      METEORA_DLMM_PROGRAM,
+    )),
+    Promise.resolve(params.meteora.deriveReserve(params.tokenXMint, params.poolAddress, METEORA_DLMM_PROGRAM)[0]),
+    Promise.resolve(params.meteora.deriveReserve(params.tokenYMint, params.poolAddress, METEORA_DLMM_PROGRAM)[0]),
+  ]);
 
-  for (let attempt = 1; attempt <= retryableAttempts; attempt += 1) {
-    try {
-      if (transaction instanceof Transaction) {
-        const { blockhash } = await connection.getLatestBlockhash("confirmed");
-        transaction.recentBlockhash = blockhash;
-        transaction.feePayer ??= signers[0]?.publicKey;
-        transaction.sign(...signers);
-      } else {
-        transaction.sign(signers);
-      }
-
-      const rawTransaction = transaction.serialize();
-      const signature = await connection.sendRawTransaction(rawTransaction, {
-        skipPreflight: false,
-        maxRetries: 0,
-      });
-
-      await waitForSignatureConfirmation(connection, signature, options?.label);
-      return signature;
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableExecutionError(error) || attempt === retryableAttempts) {
-        throw error;
-      }
-      await delay(backoffMs(attempt));
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error(`Transaction failed${options?.label ? `: ${options.label}` : ""}`);
-}
-
-async function waitForSignatureConfirmation(connection: Connection, signature: string, label?: string) {
-  const deadline = Date.now() + DEFAULT_CONFIRMATION_TIMEOUT_MS;
-
-  while (Date.now() < deadline) {
-    const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
-    const status = value[0];
-
-    if (status?.err) {
-      throw new Error(`Transaction ${signature} failed${label ? ` (${label})` : ""}: ${JSON.stringify(status.err)}`);
-    }
-
-    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
-      return;
-    }
-
-    await delay(1_000);
-  }
-
-  throw new Error(`Timed out waiting for transaction confirmation${label ? ` (${label})` : ""}: ${signature}`);
-}
-
-async function fetchQuote(intent: TradeIntent, apiKey?: string) {
-  const params = new URLSearchParams({
-    inputMint: intent.symbolIn ?? "So11111111111111111111111111111111111111112",
-    outputMint: intent.symbolOut ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    amount: String(Math.max(1, Math.round(intent.amountUsd * 1_000_000))),
-    slippageBps: String(intent.slippageBps),
-  });
-
-  const candidates = [
-    { url: `https://api.jup.ag/swap/v1/quote?${params.toString()}`, headers: jupiterHeaders(apiKey) },
-    { url: `https://quote-api.jup.ag/v6/quote?${params.toString()}`, headers: { Accept: "application/json" } },
+  const [tokenAccountA, tokenAccountB] = [
+    deriveAssociatedTokenAddress(params.user.publicKey, params.tokenXMint),
+    deriveAssociatedTokenAddress(params.user.publicKey, params.tokenYMint),
   ];
 
-  for (const candidate of candidates) {
-    const response = await fetch(candidate.url, {
-      headers: candidate.headers,
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!response.ok) continue;
-    return response.json();
-  }
-
-  throw new Error("Jupiter quote API failed for all known endpoints");
+  return {
+    positionNftMint: params.positionPubkey,
+    positionNftAccount: params.positionPubkey,
+    positionPubkey: params.positionPubkey,
+    tickLowerIndex: params.lowerBinId,
+    tickUpperIndex: params.upperBinId,
+    extra: {
+      token_account_a: tokenAccountA,
+      token_account_b: tokenAccountB,
+      mint_a: params.tokenXMint,
+      mint_b: params.tokenYMint,
+      bin_array_bitmap: binArrayBitmap,
+      bin_array_lower: binArrayKeys[0],
+      bin_array_upper: binArrayKeys[binArrayKeys.length - 1],
+      reserve_x: reserveX,
+      reserve_y: reserveY,
+    },
+  };
 }
 
-async function buildSwapTransaction(
-  quote: unknown,
-  userPublicKey: string,
-  priorityFeeMicroLamports: number,
-  apiKey?: string,
+function selectPositionForAction(
+  positions: Array<{ publicKey: PublicKey; positionData: { totalXAmount: string; totalYAmount: string; lowerBinId?: number; upperBinId?: number } }>,
+  activeBinId: number,
+  requireLiquidity: boolean,
+  helpers: { getPositionLowerUpperBinIdWithLiquidity: (position: { totalXAmount: string; totalYAmount: string; lowerBinId?: number; upperBinId?: number }) => { lowerBinId: number; upperBinId: number } | null },
 ) {
-  const body = JSON.stringify({
-    quoteResponse: quote,
-    userPublicKey,
-    wrapAndUnwrapSol: true,
-    dynamicComputeUnitLimit: true,
-    prioritizationFeeLamports: Math.max(1_000, Math.floor(priorityFeeMicroLamports / 1_000)),
+  const scored = positions
+    .map((position) => {
+      const range = getPositionRange(position, helpers);
+      const hasLiquidity = positionNotional(position) > 0n;
+      if (requireLiquidity && !hasLiquidity) return null;
+      return {
+        position,
+        activeCoverage: range ? (range.lowerBinId <= activeBinId && activeBinId <= range.upperBinId ? 1 : 0) : 0,
+        notional: positionNotional(position),
+      };
+    })
+    .filter((entry): entry is { position: { publicKey: PublicKey; positionData: { totalXAmount: string; totalYAmount: string; lowerBinId?: number; upperBinId?: number } }; activeCoverage: number; notional: bigint } => entry !== null);
+
+  if (scored.length === 0) return null;
+
+  scored.sort((a, b) => {
+    if (a.activeCoverage !== b.activeCoverage) return b.activeCoverage - a.activeCoverage;
+    if (a.notional === b.notional) return 0;
+    return a.notional > b.notional ? -1 : 1;
   });
 
-  for (const [url, headers] of [
-    ["https://api.jup.ag/swap/v1/swap", jupiterHeaders(apiKey, true)],
-    ["https://quote-api.jup.ag/v6/swap", { "content-type": "application/json" }],
-  ] as const) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body,
-      signal: AbortSignal.timeout(12_000),
-    });
-
-    if (!response.ok) continue;
-
-    const payload = (await response.json()) as { swapTransaction?: string };
-    if (payload.swapTransaction) return payload.swapTransaction;
-  }
-
-  throw new Error("Jupiter swap API failed for all known endpoints");
+  return scored[0]?.position ?? null;
 }
 
-type JupiterPriceEntry = { usdPrice?: number; price?: number; priceChange24h?: number };
-type JupiterPriceMap = Record<string, JupiterPriceEntry>;
+function getPositionRange(
+  position: { positionData: { totalXAmount: string; totalYAmount: string; lowerBinId?: number; upperBinId?: number } },
+  helpers: { getPositionLowerUpperBinIdWithLiquidity: (position: { totalXAmount: string; totalYAmount: string; lowerBinId?: number; upperBinId?: number }) => { lowerBinId: number; upperBinId: number } | null },
+) {
+  const range = helpers.getPositionLowerUpperBinIdWithLiquidity(position.positionData);
+  if (range) {
+    return range;
+  }
+
+  if (typeof position.positionData.lowerBinId === "number" && typeof position.positionData.upperBinId === "number") {
+    return {
+      lowerBinId: position.positionData.lowerBinId,
+      upperBinId: position.positionData.upperBinId,
+    };
+  }
+
+  return null;
+}
+
+function positionNotional(position: { positionData: { totalXAmount: string; totalYAmount: string } }) {
+  return safeBigInt(position.positionData.totalXAmount) + safeBigInt(position.positionData.totalYAmount);
+}
+
+function safeBigInt(value: string | number | bigint | undefined) {
+  try {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "number") return BigInt(value);
+    if (typeof value === "string" && value.trim().length > 0) return BigInt(value);
+  } catch {
+    return 0n;
+  }
+  return 0n;
+}
+
+function deriveAssociatedTokenAddress(owner: PublicKey, mint: PublicKey) {
+  return PublicKey.findProgramAddressSync([
+    owner.toBuffer(),
+    new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").toBuffer(),
+    mint.toBuffer(),
+  ], new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bRX"))[0];
+}
+
+function inferCluster(rpcUrl: string): "mainnet-beta" | "devnet" | "testnet" | "localhost" {
+  const normalized = rpcUrl.toLowerCase();
+  if (normalized.includes("localhost") || normalized.includes("127.0.0.1")) return "localhost";
+  if (normalized.includes("devnet")) return "devnet";
+  if (normalized.includes("testnet")) return "testnet";
+  return "mainnet-beta";
+}
+
+function parsePublicKey(value: string, fieldName: string) {
+  try {
+    return new PublicKey(value);
+  } catch {
+    throw new Error(`${fieldName} must be a valid Solana public key`);
+  }
+}
+
+function loadKeypair(secretKey: string) {
+  const trimmed = secretKey.trim();
+  if (trimmed.startsWith("[")) {
+    const bytes = JSON.parse(trimmed) as number[];
+    return Keypair.fromSecretKey(Uint8Array.from(bytes));
+  }
+
+  if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+    return Keypair.fromSecretKey(Uint8Array.from(Buffer.from(trimmed, "hex")));
+  }
+
+  try {
+    return Keypair.fromSecretKey(Uint8Array.from(Buffer.from(trimmed, "base64")));
+  } catch {
+    throw new Error("BOT_SIGNER_SECRET_KEY must be JSON array, hex, or base64 encoded secret key");
+  }
+}
+
+function derivePositionPda(
+  lbPair: PublicKey,
+  owner: PublicKey,
+  lowerBinId: number,
+  width: number,
+) {
+  return derive_position_pda(lbPair, owner, lowerBinId, width)[0];
+}
+
+function toMint(symbol: string) {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "SOL") return new PublicKey("So11111111111111111111111111111111111111112");
+  if (normalized === "USDC") return new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+  return parsePublicKey(symbol, "Token mint");
+}
+
+function unsupportedExecution(intent: TradeIntent, reason: string): ExecutionResult {
+  return {
+    intentId: intent.id,
+    status: "rejected",
+    filledUsd: 0,
+    feesUsd: 0,
+    slippageUsd: 0,
+    executedAt: new Date().toISOString(),
+    reason,
+  };
+}
+
+function mapOrchestratorResult(intent: TradeIntent, result: { success: boolean; signature?: string; error?: string }, filledUsd: number, reason: string): ExecutionResult {
+  return {
+    intentId: intent.id,
+    status: result.success ? "filled" : "failed",
+    txSignature: result.signature,
+    filledUsd: round2(filledUsd),
+    feesUsd: round2(Math.max(0.05, intent.amountUsd * 0.0015)),
+    slippageUsd: round2(intent.amountUsd * (intent.slippageBps / 10_000)),
+    executedAt: new Date().toISOString(),
+    reason: result.success ? reason : result.error ?? reason,
+  };
+}
 
 async function fetchTokenUsdPrices(mints: string[], apiKey?: string) {
   const uniqueMints = [...new Set(mints)].filter(Boolean);
@@ -446,7 +489,7 @@ async function fetchTokenUsdPrices(mints: string[], apiKey?: string) {
     if (!response.ok) continue;
 
     const payload: any = await response.json();
-    const data = (payload?.data ?? payload) as JupiterPriceMap;
+    const data = (payload?.data ?? payload) as Record<string, { usdPrice?: number; price?: number }>;
     const prices: Record<string, number> = {};
     for (const mint of uniqueMints) {
       const price = data[mint]?.usdPrice ?? data[mint]?.price;
@@ -486,112 +529,6 @@ function toRawAmount(usdAmount: number, tokenPriceUsd: number, decimals: number)
   return new BN(Math.max(0, rawAmount));
 }
 
-function selectPositionForAdd(
-  positions: Array<LbPosition>,
-  activeBinId: number,
-  helpers: {
-    getPositionLowerUpperBinIdWithLiquidity: (
-      position: LbPosition["positionData"],
-    ) => { lowerBinId: Bn; upperBinId: Bn } | null;
-  },
-): LbPosition | null {
-  return selectPosition(positions, activeBinId, false, helpers);
-}
-
-function selectPositionForRemoval(
-  positions: Array<LbPosition>,
-  activeBinId: number,
-  helpers: {
-    getPositionLowerUpperBinIdWithLiquidity: (
-      position: LbPosition["positionData"],
-    ) => { lowerBinId: Bn; upperBinId: Bn } | null;
-  },
-): LbPosition | null {
-  return selectPosition(positions, activeBinId, true, helpers);
-}
-
-function selectPosition(
-  positions: Array<LbPosition>,
-  activeBinId: number,
-  requireLiquidity: boolean,
-  helpers: {
-    getPositionLowerUpperBinIdWithLiquidity: (
-      position: LbPosition["positionData"],
-    ) => { lowerBinId: Bn; upperBinId: Bn } | null;
-  },
-): LbPosition | null {
-  const scored = positions
-    .map((position) => {
-      const range = getPositionRange(position, helpers);
-      const hasLiquidity = positionHasLiquidity(position);
-      if (requireLiquidity && !hasLiquidity) return null;
-
-      return {
-        position,
-        activeCoverage: range ? (range.lowerBinId <= activeBinId && activeBinId <= range.upperBinId ? 1 : 0) : 0,
-        notional: positionNotional(position),
-      };
-    })
-    .filter((entry): entry is { position: LbPosition; activeCoverage: number; notional: bigint } =>
-      entry !== null,
-    );
-
-  if (scored.length === 0) return null;
-
-  scored.sort((a, b) => {
-    if (a.activeCoverage !== b.activeCoverage) return b.activeCoverage - a.activeCoverage;
-    if (a.notional === b.notional) return 0;
-    return a.notional > b.notional ? -1 : 1;
-  });
-
-  return scored[0]?.position ?? null;
-}
-
-function getPositionRange(
-  position: LbPosition,
-  helpers: {
-    getPositionLowerUpperBinIdWithLiquidity: (
-      position: LbPosition["positionData"],
-    ) => { lowerBinId: Bn; upperBinId: Bn } | null;
-  },
-) {
-  const range = helpers.getPositionLowerUpperBinIdWithLiquidity(position.positionData);
-  if (range) {
-    return {
-      lowerBinId: range.lowerBinId.toNumber(),
-      upperBinId: range.upperBinId.toNumber(),
-    };
-  }
-
-  if (typeof position.positionData.lowerBinId === "number" && typeof position.positionData.upperBinId === "number") {
-    return {
-      lowerBinId: position.positionData.lowerBinId,
-      upperBinId: position.positionData.upperBinId,
-    };
-  }
-
-  return null;
-}
-
-function positionHasLiquidity(position: LbPosition) {
-  return positionNotional(position) > 0n;
-}
-
-function positionNotional(position: LbPosition) {
-  return safeBigInt(position.positionData.totalXAmount) + safeBigInt(position.positionData.totalYAmount);
-}
-
-function safeBigInt(value: string | number | bigint | undefined) {
-  try {
-    if (typeof value === "bigint") return value;
-    if (typeof value === "number") return BigInt(value);
-    if (typeof value === "string" && value.trim().length > 0) return BigInt(value);
-  } catch {
-    return 0n;
-  }
-  return 0n;
-}
-
 function defaultHalfWidth(width: number) {
   return Math.floor((width - 1) / 2);
 }
@@ -600,50 +537,8 @@ function defaultUpperOffset(width: number) {
   return width - 1 - defaultHalfWidth(width);
 }
 
-function inferCluster(rpcUrl: string): "mainnet-beta" | "devnet" | "testnet" | "localhost" {
-  const normalized = rpcUrl.toLowerCase();
-  if (normalized.includes("localhost") || normalized.includes("127.0.0.1")) return "localhost";
-  if (normalized.includes("devnet")) return "devnet";
-  if (normalized.includes("testnet")) return "testnet";
-  return "mainnet-beta";
-}
-
-function parsePublicKey(value: string, fieldName: string) {
-  try {
-    return new PublicKey(value);
-  } catch {
-    throw new Error(`${fieldName} must be a valid Solana public key`);
-  }
-}
-
-function unsupportedExecution(intent: TradeIntent, reason: string): ExecutionResult {
-  return {
-    intentId: intent.id,
-    status: "rejected",
-    filledUsd: 0,
-    feesUsd: 0,
-    slippageUsd: 0,
-    executedAt: new Date().toISOString(),
-    reason,
-  };
-}
-
-function loadKeypair(secretKey: string) {
-  const trimmed = secretKey.trim();
-  if (trimmed.startsWith("[")) {
-    const bytes = JSON.parse(trimmed) as number[];
-    return Keypair.fromSecretKey(Uint8Array.from(bytes));
-  }
-
-  if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
-    return Keypair.fromSecretKey(Uint8Array.from(Buffer.from(trimmed, "hex")));
-  }
-
-  try {
-    return Keypair.fromSecretKey(Uint8Array.from(Buffer.from(trimmed, "base64")));
-  } catch {
-    throw new Error("BOT_SIGNER_SECRET_KEY must be JSON array, hex, or base64 encoded secret key");
-  }
+function round2(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function jupiterHeaders(apiKey?: string, contentType = false) {
@@ -653,41 +548,4 @@ function jupiterHeaders(apiKey?: string, contentType = false) {
 
   if (apiKey) headers["x-api-key"] = apiKey;
   return headers;
-}
-
-function isRetryableExecutionError(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
-  return [
-    "blockhash not found",
-    "transaction expired",
-    "expired blockheight",
-    "timed out",
-    "timeout",
-    "node is behind",
-    "network error",
-    "econnreset",
-    "etimedout",
-    "fetch failed",
-    "429",
-    "too many requests",
-    "service unavailable",
-    "gateway timeout",
-  ].some((needle) => message.includes(needle));
-}
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
-
-function round2(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function backoffMs(attempt: number) {
-  return Math.min(2_500, 350 * 2 ** (attempt - 1));
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -4,1556 +4,1656 @@ import {
   AreaChart,
   CartesianGrid,
   ResponsiveContainer,
-  Tooltip as RechartsTooltip,
+  Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import {
-  Activity,
-  ArrowUpRight,
-  BarChart3,
-  Bot,
-  ChevronRight,
-  CircleAlert,
-  CircleDollarSign,
-  Copy,
-  Gauge,
-  Layers3,
-  LayoutDashboard,
-  LineChart,
-  RefreshCw,
-  Search,
-  Settings2,
-  ShieldAlert,
-  SlidersHorizontal,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
-  Wallet,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  Link,
-  Route,
-  Router as WouterRouter,
-  Switch,
-  useLocation,
-} from "wouter";
-import {
-  type AnalyticsResponse,
+  PoolSignalType,
+  PoolIlRisk,
   type Pool,
   type Position,
   useGetAnalytics,
+  useGetPool,
   useGetPools,
   useGetPositions,
   useGetPrices,
   useHealthCheck,
 } from "@workspace/api-client-react";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import NotFound from "@/pages/not-found";
-import { API_BASE_URL } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import "./dashboard.css";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 15_000,
-    },
+type Page = "signals" | "positions" | "analytics" | "wallet" | "settings";
+type Chip = "all" | "hot" | "meteora" | "smart" | "organic";
+type Language = "en" | "ru";
+
+type WalletRow = {
+  symbol: string;
+  amount: number;
+  valueUsd: number;
+};
+
+type StringMap = Record<string, string>;
+
+const STRINGS: Record<Language, StringMap> = {
+  en: {
+    stop: "STOP",
+    start: "START",
+    agentStatus: "⬡ AGENT STATUS",
+    scanIn: "SCAN IN",
+    poolsScanned: "POOLS SCANNED",
+    signals: "SIGNALS",
+    positions: "POSITIONS",
+    activeSignals: "ACTIVE SIGNALS",
+    jupOrganic: "JUP ORGANIC",
+    smartMoney: "SMART MONEY",
+    ilRisk: "IL RISK",
+    low: "LOW",
+    enter: "ENTER",
+    watch: "WATCH",
+    enterPool: "ENTER POOL →",
+    viewDetail: "VIEW DETAIL",
+    smartMoneyTitle: "SMART MONEY",
+    recentWalletActivity: "⬡ RECENT WALLET ACTIVITY",
+    myPositions: "MY POSITIONS",
+    totalPnl: "TOTAL P&L",
+    earnedThisWeek: "EARNED THIS WEEK",
+    feesCollected: "FEES COLLECTED",
+    activePools: "ACTIVE POOLS",
+    invested: "INVESTED",
+    feesEarned: "FEES EARNED",
+    inRange: "IN RANGE",
+    edge: "⚠ EDGE",
+    rebalance: "⟳ REBALANCE",
+    close: "✕ CLOSE",
+    performance: "PERFORMANCE",
+    pnlChart: "P&L CHART",
+    history: "HISTORY",
+    wallet: "WALLET",
+    totalBalance: "TOTAL BALANCE",
+    connectWallet: "CONNECT WALLET",
+    disconnectWallet: "DISCONNECT WALLET",
+    deposit: "DEPOSIT",
+    withdraw: "WITHDRAW",
+    swap: "SWAP",
+    assets: "ASSETS",
+    inPools: "IN POOLS",
+    connected: "CONNECTED",
+    settings: "SETTINGS",
+    language: "LANGUAGE",
+    agent: "AGENT",
+    riskLevel: "RISK LEVEL",
+    filters: "FILTERS",
+    about: "ABOUT",
+    version: "VERSION 1.0.0 BETA",
+    autoOpen: "Auto Open Positions",
+    autoOpenSub: "Agent enters pools automatically",
+    autoRebal: "Auto Rebalance",
+    autoRebalSub: "Rebalance when price exits range",
+    stopLoss: "Stop Loss",
+    stopLossSub: "Close position on −15% loss",
+    notifications: "Notifications",
+    notificationsSub: "Push alerts for signals & positions",
+    safe: "SAFE",
+    balanced: "BALANCED",
+    aggressive: "AGGRESSIVE",
+    minTvl: "Min TVL",
+    minJup: "Min Jupiter Score",
+    smartThr: "Smart Money Threshold",
+    settingChanged: "Setting updated",
+    disconnected: "Wallet disconnected",
+    agentStopped: "⬛ AGENT STOPPED",
+    riskLow: "LOW RISK",
+    riskBal: "BALANCED",
+    riskHigh: "HIGH RISK",
+    loadingDetail: "Loading pool detail...",
+    rebalancing: "Rebalancing position...",
+    closing: "Closing position...",
+    depositMsg: "Opening deposit...",
+    withdrawMsg: "Opening withdrawal...",
+    swapMsg: "Opening swap...",
+    connectHint: "Connect a Solana wallet to continue",
+    walletAddress: "WALLET ADDRESS",
+    walletProvider: "WALLET PROVIDER",
+    connect: "CONNECT",
+    cancel: "CANCEL",
+    selectWallet: "Select a Solana wallet to connect",
+    recommended: "RECOMMENDED",
+    updated: "UPDATED",
+    openPool: "Open pool detail",
+    liveData: "LIVE DATA",
+    trend: "TREND",
+    scanDisabled: "SCAN PAUSED",
+    scanRunning: "SCAN ACTIVE",
+    noWallet: "No wallet connected",
+    invalidWallet: "Enter a valid Solana wallet address first",
+    copyAddress: "Copy address",
+    copied: "Copied",
+    summarize: "TRACKED CAPITAL",
+    positionsLabel: "POSITIONS",
+    pnl7d: "P&L 7D",
+    winRate: "WIN RATE",
+    avgHold: "AVG HOLD",
+    totalTrades: "TRADES",
+    currentPrice: "CURRENT PRICE",
+    tvl: "TVL",
+    volume24h: "VOL 24H",
+    fee24h: "24H FEE",
+    signalScore: "SIGNAL SCORE",
+    signalScoreShort: "SCORE",
+    topPools: "TOP POOLS",
+    marketSnapshot: "MARKET SNAPSHOT",
+    walletBalance: "TRACKED BALANCE",
+    liveAssetBreakdown: "LIVE BREAKDOWN",
   },
-});
+  ru: {
+    stop: "СТОП",
+    start: "СТАРТ",
+    agentStatus: "⬡ СТАТУС АГЕНТА",
+    scanIn: "СКАН ЧЕРЕЗ",
+    poolsScanned: "ПУЛОВ СКАН.",
+    signals: "СИГНАЛЫ",
+    positions: "ПОЗИЦИИ",
+    activeSignals: "АКТИВНЫЕ СИГНАЛЫ",
+    jupOrganic: "JUP ОРГАНИКА",
+    smartMoney: "УМНЫЕ $",
+    ilRisk: "РИСК IL",
+    low: "НИЗКИЙ",
+    enter: "ВОЙТИ",
+    watch: "СЛЕДИТЬ",
+    enterPool: "ВОЙТИ В ПУЛ →",
+    viewDetail: "ПОДРОБНЕЕ",
+    smartMoneyTitle: "УМНЫЕ ДЕНЬГИ",
+    recentWalletActivity: "⬡ АКТИВНОСТЬ КОШЕЛЬКОВ",
+    myPositions: "МОИ ПОЗИЦИИ",
+    totalPnl: "ИТОГО P&L",
+    earnedThisWeek: "ЗАРАБОТАНО ЗА НЕДЕЛЮ",
+    feesCollected: "СБОРЫ ПОЛУЧЕНЫ",
+    activePools: "АКТИВНЫХ ПУЛА",
+    invested: "ВЛОЖЕНО",
+    feesEarned: "СБОРЫ",
+    inRange: "В ДИАПАЗОНЕ",
+    edge: "⚠ НА ГРАНИ",
+    rebalance: "⟳ РЕБАЛАНС",
+    close: "✕ ЗАКРЫТЬ",
+    performance: "ДОХОДНОСТЬ",
+    pnlChart: "ГРАФИК P&L",
+    history: "ИСТОРИЯ",
+    wallet: "КОШЕЛЁК",
+    totalBalance: "ОБЩИЙ БАЛАНС",
+    connectWallet: "ПОДКЛЮЧИТЬ КОШЕЛЁК",
+    disconnectWallet: "ОТКЛЮЧИТЬ КОШЕЛЁК",
+    deposit: "ПОПОЛНИТЬ",
+    withdraw: "ВЫВЕСТИ",
+    swap: "ОБМЕНЯТЬ",
+    assets: "АКТИВЫ",
+    inPools: "В ПУЛАХ",
+    connected: "ПОДКЛЮЧЁН",
+    settings: "НАСТРОЙКИ",
+    language: "ЯЗЫК",
+    agent: "АГЕНТ",
+    riskLevel: "УРОВЕНЬ РИСКА",
+    filters: "ФИЛЬТРЫ",
+    about: "О ПРОГРАММЕ",
+    version: "ВЕРСИЯ 1.0.0 БЕТА",
+    autoOpen: "Авто открытие",
+    autoOpenSub: "Агент входит в пулы автоматически",
+    autoRebal: "Авто ребаланс",
+    autoRebalSub: "Ребаланс при выходе цены из диапазона",
+    stopLoss: "Стоп-лосс",
+    stopLossSub: "Закрытие позиции при убытке −15%",
+    notifications: "Уведомления",
+    notificationsSub: "Push-уведомления о сигналах и позициях",
+    safe: "БЕЗОПАСНО",
+    balanced: "БАЛАНС",
+    aggressive: "АГРЕССИВНО",
+    minTvl: "Мин. TVL",
+    minJup: "Мин. оценка Jupiter",
+    smartThr: "Порог умных денег",
+    settingChanged: "Настройка обновлена",
+    disconnected: "Кошелёк отключён",
+    agentStopped: "⬛ АГЕНТ ОСТАНОВЛЕН",
+    riskLow: "НИЗКИЙ РИСК",
+    riskBal: "БАЛАНС",
+    riskHigh: "ВЫСОКИЙ РИСК",
+    loadingDetail: "Загружаю детали пула...",
+    rebalancing: "Ребалансирую позицию...",
+    closing: "Закрываю позицию...",
+    depositMsg: "Открываю депозит...",
+    withdrawMsg: "Открываю вывод...",
+    swapMsg: "Открываю обмен...",
+    connectHint: "Подключите Solana кошелёк, чтобы продолжить",
+    walletAddress: "АДРЕС КОШЕЛЬКА",
+    walletProvider: "WALLET PROVIDER",
+    connect: "ПОДКЛЮЧИТЬ",
+    cancel: "ОТМЕНА",
+    selectWallet: "Выберите Solana кошелёк для подключения",
+    recommended: "РЕКОМЕНДУЕТСЯ",
+    updated: "ОБНОВЛЕНО",
+    openPool: "Открыть детали пула",
+    liveData: "ЖИВЫЕ ДАННЫЕ",
+    trend: "ТРЕНД",
+    scanDisabled: "СКАН ПАУЗА",
+    scanRunning: "СКАН АКТИВЕН",
+    noWallet: "Кошелёк не подключён",
+    invalidWallet: "Сначала введите валидный адрес Solana кошелька",
+    copyAddress: "Скопировать адрес",
+    copied: "Скопировано",
+    summarize: "ОТСЛЕЖИВАЕМЫЙ КАПИТАЛ",
+    positionsLabel: "ПОЗИЦИИ",
+    pnl7d: "P&L 7Д",
+    winRate: "WIN RATE",
+    avgHold: "СР. ДЕРЖАНИЕ",
+    totalTrades: "СДЕЛКИ",
+    currentPrice: "ТЕК. ЦЕНА",
+    tvl: "TVL",
+    volume24h: "VOL 24H",
+    fee24h: "24H FEE",
+    signalScore: "ОЦЕНКА",
+    signalScoreShort: "СКОР",
+    topPools: "ТОП ПУЛЫ",
+    marketSnapshot: "РЫНОЧНЫЙ СНИМОК",
+    walletBalance: "ОТСЛЕЖИВАЕМЫЙ БАЛАНС",
+    liveAssetBreakdown: "СТРУКТУРА АКТИВОВ",
+  },
+};
 
-const NAV_ITEMS: Array<{
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  hint: string;
-}> = [
-  { href: "/", label: "Overview", icon: LayoutDashboard, hint: "Snapshot" },
-  { href: "/pools", label: "Pools", icon: Layers3, hint: "Signals" },
-  { href: "/positions", label: "Positions", icon: Wallet, hint: "Portfolio" },
-  { href: "/analytics", label: "Analytics", icon: LineChart, hint: "Performance" },
-  { href: "/settings", label: "Settings", icon: Settings2, hint: "System" },
-];
+const LANGUAGE_KEY = "meridian.lang";
+const WALLET_KEY = "meridian.walletAddress";
+const PROVIDER_KEY = "meridian.walletProvider";
+const AGENT_KEY = "meridian.agentRunning";
+const RISK_KEY = "meridian.risk";
+const AUTO_OPEN_KEY = "meridian.autoOpen";
+const AUTO_REBAL_KEY = "meridian.autoRebal";
+const STOP_LOSS_KEY = "meridian.stopLoss";
+const NOTIF_KEY = "meridian.notifications";
+const PAGE_KEY = "meridian.page";
+const MIN_TVL_KEY = "meridian.minTvl";
+const MIN_JUP_KEY = "meridian.minJup";
+const SMART_KEY = "meridian.smartMoney";
+const CHIP_KEY = "meridian.chip";
 
-const DEFAULT_WALLET =
-  "J7wVYf7X4a8k3N1m5P8bQ2cT9uR4fL6sH1dG3eK9mQ2";
+function readStorage<T extends string>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  const value = window.localStorage.getItem(key);
+  return (value as T | null) ?? fallback;
+}
 
-const PRICE_TOKENS = ["SOL", "USDC", "JUP", "RAY", "BONK"];
+function readBool(key: string, fallback: boolean): boolean {
+  if (typeof window === "undefined") return fallback;
+  const value = window.localStorage.getItem(key);
+  if (value === null) return fallback;
+  return value === "true";
+}
 
-const usdCompact = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
-const usdFull = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+function shortAddress(address: string) {
+  if (address.length <= 10) return address;
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
+}
 
-const usdPrecise = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2,
-});
+function formatCurrency(value: number, maximumFractionDigits = 0) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits,
+  }).format(value);
+}
 
-const numberCompact = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
+function formatPercent(value: number, digits = 1) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}%`;
+}
 
-const percentOne = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
+function formatTimeSince(iso: string) {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "—";
+  const diff = Math.max(0, Date.now() - ts);
+  const mins = Math.max(1, Math.round(diff / 60000));
+  if (mins < 60) return `${mins} MIN AGO`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}H AGO`;
+  const days = Math.round(hours / 24);
+  return `${days}D AGO`;
+}
+
+function formatRelativeShort(iso: string) {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "—";
+  const diff = Math.max(0, Date.now() - ts);
+  const mins = Math.max(1, Math.round(diff / 60000));
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function riskLabel(risk: number, t: StringMap) {
+  if (risk < 33) return t.riskLow;
+  if (risk < 67) return t.riskBal;
+  return t.riskHigh;
+}
+
+function poolTone(pool: Pool) {
+  if (pool.signalType === PoolSignalType.ENTER) return "hot";
+  if (pool.signalType === PoolSignalType.AVOID) return "warm";
+  return "warm";
+}
+
+function ilRiskScore(risk: string) {
+  if (risk === PoolIlRisk.LOW) return 24;
+  if (risk === PoolIlRisk.MEDIUM) return 56;
+  return 86;
+}
+
+function TokenBadge({ symbol, colorClass, label }: { symbol: string; colorClass: string; label?: string }) {
+  return <div className={`token-avatar ${colorClass}`}>{label ?? symbol}</div>;
+}
+
+function MetricBox({ value, label, valueClass = "" }: { value: string; label: string; valueClass?: string }) {
+  return (
+    <div className="metric">
+      <div className={`metric-val ${valueClass}`}>{value}</div>
+      <div className="metric-lbl">{label}</div>
+    </div>
+  );
+}
+
+function StatBox({ value, label, color }: { value: string; label: string; color?: string }) {
+  return (
+    <div className="stat-box">
+      <div className="stat-val" style={color ? { color } : undefined}>
+        {value}
+      </div>
+      <div className="stat-lbl">{label}</div>
+    </div>
+  );
+}
+
+function SmallBadge({ text, tone }: { text: string; tone: "green" | "cyan" | "violet" | "orange" | "red" }) {
+  const className =
+    tone === "green"
+      ? "badge-enter"
+      : tone === "violet"
+        ? "badge-watch"
+        : tone === "orange"
+          ? "badge-watch"
+          : tone === "red"
+            ? "badge-watch"
+            : "badge-watch";
+  return <div className={`signal-badge ${className}`}>{text}</div>;
+}
+
+function formatPoolScore(value: number) {
+  return `${Math.max(0, Math.min(100, Math.round(value)))} `;
+}
 
 function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppShell />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
-  );
-}
-
-function AppShell() {
-  const [pathname] = useLocation();
-  const [wallet, setWallet] = useStoredValue("meridian.wallet", DEFAULT_WALLET);
-  const health = useHealthCheck({
-    query: {
-      queryKey: ["/api/healthz"],
-      refetchInterval: 30_000,
-      staleTime: 15_000,
-      retry: 1,
-    },
-  });
-
-  const apiStatus = health.isPending
-    ? "checking"
-    : health.isError
-      ? "degraded"
-      : "ready";
-
-  return (
-    <div className="app-shell">
-      <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-4 px-3 pb-20 pt-3 lg:flex-row lg:px-5 lg:pb-5">
-        <aside className="hidden w-80 shrink-0 flex-col gap-4 lg:flex">
-          <BrandPanel apiStatus={apiStatus} />
-          <SidebarNav pathname={pathname} />
-          <WalletPanel wallet={wallet} setWallet={setWallet} />
-          <NetworkPanel health={health} />
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <TopBar
-            pathname={pathname}
-            wallet={wallet}
-            setWallet={setWallet}
-            apiStatus={apiStatus}
-          />
-
-          <main className="min-w-0 flex-1 pb-6">
-            <Switch>
-              <Route path="/">
-                <OverviewPage wallet={wallet} />
-              </Route>
-              <Route path="/pools">
-                <PoolsPage />
-              </Route>
-              <Route path="/positions">
-                <PositionsPage wallet={wallet} setWallet={setWallet} />
-              </Route>
-              <Route path="/analytics">
-                <AnalyticsPage wallet={wallet} />
-              </Route>
-              <Route path="/settings">
-                <SettingsPage wallet={wallet} setWallet={setWallet} />
-              </Route>
-              <Route component={NotFound} />
-            </Switch>
-          </main>
-        </div>
-      </div>
-
-      <BottomNav pathname={pathname} />
-    </div>
-  );
-}
-
-function TopBar({
-  pathname,
-  wallet,
-  setWallet,
-  apiStatus,
-}: {
-  pathname: string;
-  wallet: string;
-  setWallet: (value: string) => void;
-  apiStatus: "checking" | "ready" | "degraded";
-}) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyWallet() {
-    try {
-      await navigator.clipboard.writeText(wallet);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      setCopied(false);
-    }
-  }
-
-  return (
-    <header className="panel-strong sticky top-3 z-20 rounded-3xl px-4 py-4 shadow-2xl lg:px-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary shadow-lg shadow-primary/10">
-            <Bot className="h-6 w-6" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-gradient sm:text-2xl">
-                Meridian
-              </h1>
-              <Badge
-                variant={apiStatus === "ready" ? "default" : "outline"}
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.24em]",
-                  apiStatus === "degraded" &&
-                    "border-destructive/30 text-destructive",
-                )}
-              >
-                {apiStatus === "ready"
-                  ? "api live"
-                  : apiStatus === "checking"
-                    ? "checking"
-                    : "api degraded"}
-              </Badge>
-            </div>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Liquidity-pool dashboard for Meteora DLMM scouting, wallet
-              tracking, and performance review.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="rounded-2xl border border-border/70 bg-background/60 px-3 py-2">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-              wallet
-            </p>
-            <div className="mt-1 flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-primary" />
-              <span className="font-mono text-xs text-foreground">
-                {shortenAddress(wallet)}
-              </span>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 rounded-full text-muted-foreground"
-                onClick={copyWallet}
-                aria-label="Copy wallet address"
-              >
-                {copied ? <CircleAlert className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-background/60 px-3 py-2">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-              api
-            </p>
-            <p className="mt-1 flex items-center gap-2 text-xs text-foreground">
-              <Activity className="h-4 w-4 text-primary" />
-              {API_BASE_URL ? API_BASE_URL : "relative /api proxy"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button asChild variant="outline" className="rounded-2xl">
-              <Link href="/pools">
-                <Search className="h-4 w-4" />
-                Explore pools
-              </Link>
-            </Button>
-            <Button
-              variant="default"
-              className="rounded-2xl"
-              onClick={() => setWallet(DEFAULT_WALLET)}
-            >
-              <Sparkles className="h-4 w-4" />
-              Reset wallet
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Separator className="my-4 bg-border/70" />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <nav className="hidden items-center gap-2 lg:flex">
-          {NAV_ITEMS.map((item) => (
-            <Button
-              asChild
-              key={item.href}
-              variant={isActiveRoute(pathname, item.href) ? "default" : "outline"}
-              className="rounded-full px-4"
-            >
-              <Link href={item.href}>
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            </Button>
-          ))}
-        </nav>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="rounded-full px-2.5 py-1">
-            {pathname === "/" ? "Overview" : pathname.slice(1)}
-          </Badge>
-          <span className="hidden sm:inline">
-            live market data, wallet metrics, and pool signals
-          </span>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function BrandPanel({ apiStatus }: { apiStatus: "checking" | "ready" | "degraded" }) {
-  return (
-    <Card className="panel-strong overflow-hidden rounded-[1.75rem]">
-      <CardHeader className="space-y-4 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
-            <Layers3 className="h-6 w-6" />
-          </div>
-          <div>
-            <CardTitle className="text-xl">Meridian Bot</CardTitle>
-            <CardDescription className="text-sm">
-              DLMM signal terminal
-            </CardDescription>
-          </div>
-        </div>
-        <p className="text-sm leading-6 text-muted-foreground">
-          A focused liquidity dashboard for ranking pools, reading wallet
-          performance, and spotting momentum before it becomes crowded.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <StatusRow
-          icon={Gauge}
-          label="system"
-          value={apiStatus === "ready" ? "connected" : apiStatus}
-        />
-        <StatusRow icon={Zap} label="strategy" value="signal first" />
-        <StatusRow icon={TrendingUp} label="coverage" value="pools / positions / analytics" />
-      </CardContent>
-    </Card>
-  );
-}
-
-function WalletPanel({
-  wallet,
-  setWallet,
-}: {
-  wallet: string;
-  setWallet: (value: string) => void;
-}) {
-  return (
-    <Card className="panel rounded-[1.5rem]">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Wallet focus</CardTitle>
-        <CardDescription>Switch the active wallet used by positions and analytics.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <Input
-          value={wallet}
-          onChange={(event) => setWallet(event.target.value.trim())}
-          spellCheck={false}
-          className="font-mono text-xs"
-          placeholder="Wallet address"
-        />
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{shortenAddress(wallet)}</span>
-          <span>{wallet.length} chars</span>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function NetworkPanel({ health }: { health: ReturnType<typeof useHealthCheck> }) {
-  return (
-    <Card className="panel rounded-[1.5rem]">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Network</CardTitle>
-        <CardDescription>API health and refresh cadence.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <StatusRow
-          icon={health.isError ? ShieldAlert : Activity}
-          label="health"
-          value={health.isError ? "degraded" : "healthy"}
-        />
-        <StatusRow icon={RefreshCw} label="polling" value="30s / 60s" />
-      </CardContent>
-    </Card>
-  );
-}
-
-function SidebarNav({ pathname }: { pathname: string }) {
-  return (
-    <Card className="panel rounded-[1.5rem]">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Navigation</CardTitle>
-        <CardDescription>Move between the working sets.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {NAV_ITEMS.map((item) => {
-          const active = isActiveRoute(pathname, item.href);
-          return (
-            <Button
-              asChild
-              key={item.href}
-              variant={active ? "default" : "outline"}
-              className="h-auto w-full justify-start rounded-2xl px-4 py-3"
-            >
-              <Link href={item.href}>
-                <item.icon className="h-4 w-4" />
-                <span className="flex-1 text-left">
-                  <span className="block text-sm">{item.label}</span>
-                  <span className="block text-[11px] font-normal opacity-75">
-                    {item.hint}
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 opacity-50" />
-              </Link>
-            </Button>
-          );
-        })}
-      </CardContent>
-    </Card>
-  );
-}
-
-function BottomNav({ pathname }: { pathname: string }) {
-  return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border/70 bg-background/92 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-3xl grid-cols-5 gap-1">
-        {NAV_ITEMS.map((item) => {
-          const active = isActiveRoute(pathname, item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[10px] transition-colors",
-                active
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
-              )}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
-
-function OverviewPage({ wallet }: { wallet: string }) {
-  const pools = useGetPools(
-    { limit: 6, minTvl: 250_000, minJupScore: 45 },
-    {
-      query: {
-        queryKey: ["/api/pools", { limit: 6, minTvl: 250_000, minJupScore: 45 }],
-        refetchInterval: 60_000,
-        staleTime: 30_000,
-      },
-    },
-  );
-
-  const positions = useGetPositions(
-    { wallet },
-    {
-      query: {
-        queryKey: ["/api/positions", { wallet }],
-        refetchInterval: 45_000,
-        staleTime: 30_000,
-      },
-    },
-  );
-
-  const analytics = useGetAnalytics(
-    { wallet },
-    {
-      query: {
-        queryKey: ["/api/analytics", { wallet }],
-        refetchInterval: 60_000,
-        staleTime: 30_000,
-      },
-    },
-  );
-
-  const prices = useGetPrices(
-    { tokens: PRICE_TOKENS.join(",") },
-    {
-      query: {
-        queryKey: ["/api/prices", { tokens: PRICE_TOKENS.join(",") }],
-        refetchInterval: 30_000,
-        staleTime: 15_000,
-      },
-    },
-  );
-
-  const totalPoolsTvl = sumBy(pools.data?.pools ?? [], (pool) => pool.tvl);
-  const positivePools = (pools.data?.pools ?? []).filter(
-    (pool) => pool.signalType === "ENTER",
-  ).length;
-  const positionsCount = positions.data?.positions.length ?? 0;
-  const topScore = maxBy(pools.data?.pools ?? [], (pool) => pool.signalScore);
-
-  const pnlSeries = useMemo(
-    () =>
-      (analytics.data?.pnlHistory ?? []).map((point) => ({
-        ...point,
-        date: shortDate(point.date),
-      })),
-    [analytics.data],
-  );
-
-  return (
-    <div className="space-y-4">
-      <section className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
-        <Card className="panel-strong overflow-hidden rounded-[2rem]">
-          <CardHeader className="space-y-4 pb-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="rounded-full px-2.5 py-1 uppercase tracking-[0.24em]">
-                live overview
-              </Badge>
-              <Badge variant="outline" className="rounded-full px-2.5 py-1">
-                refreshed {lastUpdated(pools.data?.lastUpdated)}
-              </Badge>
-            </div>
-            <div className="space-y-3">
-              <CardTitle className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-                Scan liquidity faster, position cleaner, and keep the wallet
-                view in one terminal.
-              </CardTitle>
-              <CardDescription className="max-w-2xl text-base leading-7">
-                Pool signals, wallet PnL, and price context are wired to the
-                live API. Use the panels below to decide where capital should
-                sit next.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-3 pt-6 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              icon={CircleDollarSign}
-              label="Tracked TVL"
-              value={usdCompact.format(totalPoolsTvl)}
-              note={`${pools.data?.total ?? 0} pools`}
-            />
-            <MetricCard
-              icon={TrendingUp}
-              label="Signal entries"
-              value={String(positivePools)}
-              note="enter / watch candidates"
-            />
-            <MetricCard
-              icon={Wallet}
-              label="Wallet PnL"
-              value={usdPrecise.format(positions.data?.totalPnlUsd ?? 0)}
-              note={`${positionsCount} positions`}
-            />
-            <MetricCard
-              icon={BarChart3}
-              label="Win rate"
-              value={`${percentOne.format(analytics.data?.winRate ?? 0)}%`}
-              note={`${analytics.data?.totalTrades ?? 0} trades`}
-            />
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <Card className="panel rounded-[1.75rem]">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Strategy snapshot</CardTitle>
-              <CardDescription>
-                High-signal pools, wallet exposure, and price context.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <StatusRow
-                icon={Gauge}
-                label="best pool"
-                value={topScore ? topScore.name : "loading"}
-              />
-              <StatusRow
-                icon={TrendingUp}
-                label="pnl"
-                value={usdPrecise.format(analytics.data?.totalPnlUsd ?? 0)}
-              />
-              <StatusRow
-                icon={Activity}
-                label="fees"
-                value={usdPrecise.format(analytics.data?.totalFeesEarned ?? 0)}
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="panel rounded-[1.75rem]">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Current prices</CardTitle>
-              <CardDescription>Quick context for the pool screen.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {prices.isPending
-                ? Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={index} className="h-11 w-full rounded-2xl" />
-                  ))
-                : Object.values(prices.data?.prices ?? {}).map((price) => (
-                    <PriceRow key={price.symbol} symbol={price.symbol} price={price.price} change={price.change24h} />
-                  ))}
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="panel rounded-[1.75rem]">
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Signal ladder</CardTitle>
-                <CardDescription>Top pools by signal quality.</CardDescription>
-              </div>
-              <Button asChild variant="outline" className="rounded-full">
-                <Link href="/pools">
-                  View all
-                  <ArrowUpRight className="h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <PoolTable pools={pools.data?.pools ?? []} loading={pools.isPending} />
-          </CardContent>
-        </Card>
-
-        <Card className="panel rounded-[1.75rem]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">P&L curve</CardTitle>
-            <CardDescription>14-day realized P&L history.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="h-72 rounded-3xl border border-border/70 bg-background/40 p-3">
-              {analytics.isPending ? (
-                <Skeleton className="h-full w-full rounded-2xl" />
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={pnlSeries}>
-                    <defs>
-                      <linearGradient id="pnlGradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.55} />
-                        <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.03} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="4 4" />
-                    <XAxis
-                      dataKey="date"
-                      stroke="hsl(var(--muted-foreground))"
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      stroke="hsl(var(--muted-foreground))"
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => usdCompact.format(Number(value))}
-                    />
-                    <RechartsTooltip
-                      cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1 }}
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        const value = Number(payload[0]?.value ?? 0);
-                        return (
-                          <div className="rounded-2xl border border-border bg-background/95 px-3 py-2 shadow-2xl">
-                            <p className="text-xs text-muted-foreground">{label}</p>
-                            <p className="mt-1 font-mono text-sm text-foreground">
-                              {usdPrecise.format(value)}
-                            </p>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="pnl"
-                      stroke="hsl(var(--primary))"
-                      fill="url(#pnlGradient)"
-                      strokeWidth={2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MetricCard
-                icon={TrendingUp}
-                label="Total PnL"
-                value={usdPrecise.format(analytics.data?.totalPnlUsd ?? 0)}
-                note="realized wallet result"
-              />
-              <MetricCard
-                icon={Activity}
-                label="Average hold"
-                value={`${percentOne.format(analytics.data?.avgHoldTime ?? 0)}h`}
-                note="synthetic signal input"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-    </div>
-  );
-}
-
-function PoolsPage() {
-  const [limit, setLimit] = useState("12");
-  const [minTvl, setMinTvl] = useState("250000");
-  const [minJupScore, setMinJupScore] = useState("45");
-
-  const pools = useGetPools(
-    {
-      limit: Number(limit) || 12,
-      minTvl: Number(minTvl) || 0,
-      minJupScore: Number(minJupScore) || 0,
-    },
-    {
-      query: {
-        queryKey: ["/api/pools", { limit: Number(limit) || 12, minTvl: Number(minTvl) || 0, minJupScore: Number(minJupScore) || 0 }],
-        refetchInterval: 60_000,
-        staleTime: 30_000,
-      },
-    },
-  );
-
-  return (
-    <div className="space-y-4">
-      <Card className="panel-strong rounded-[2rem]">
-        <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-2xl">Pool radar</CardTitle>
-              <CardDescription>
-                Filter the live pool feed before moving into a position.
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
-              <SlidersHorizontal className="h-4 w-4 text-primary" />
-              {pools.data?.total ?? 0} visible
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <FilterField label="Limit" value={limit} onChange={setLimit} />
-          <FilterField label="Min TVL" value={minTvl} onChange={setMinTvl} />
-          <FilterField label="Min JUP score" value={minJupScore} onChange={setMinJupScore} />
-        </CardContent>
-      </Card>
-
-      <Card className="panel rounded-[1.75rem]">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Pools</CardTitle>
-          <CardDescription>Ranked by signal quality and liquidity depth.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <PoolTable pools={pools.data?.pools ?? []} loading={pools.isPending} />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function PositionsPage({
-  wallet,
-  setWallet,
-}: {
-  wallet: string;
-  setWallet: (value: string) => void;
-}) {
-  const positions = useGetPositions(
-    { wallet },
-    {
-      query: {
-        queryKey: ["/api/positions", { wallet }],
-        refetchInterval: 45_000,
-        staleTime: 30_000,
-      },
-    },
-  );
-
-  const summaryCards = [
-    {
-      label: "Liquidity",
-      value: usdPrecise.format(positions.data?.totalLiquidityUsd ?? 0),
-      icon: CircleDollarSign,
-    },
-    {
-      label: "Fees earned",
-      value: usdPrecise.format(positions.data?.totalFeesEarned ?? 0),
-      icon: Activity,
-    },
-    {
-      label: "Net PnL",
-      value: usdPrecise.format(positions.data?.totalPnlUsd ?? 0),
-      icon: TrendingUp,
-    },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <Card className="panel-strong rounded-[2rem]">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-2xl">Positions</CardTitle>
-          <CardDescription>
-            Track active DLMM exposure for the wallet currently under review.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-              Active wallet
-            </p>
-            <Input
-              value={wallet}
-              onChange={(event) => setWallet(event.target.value.trim())}
-              className="font-mono text-xs"
-            />
-            <p className="text-sm text-muted-foreground">
-              The positions and analytics tabs use this address for live queries.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {summaryCards.map((item) => (
-              <MetricCard
-                key={item.label}
-                icon={item.icon}
-                label={item.label}
-                value={item.value}
-                note="wallet-level"
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        {(positions.data?.positions ?? []).map((position) => (
-          <PositionCard key={position.address} position={position} />
-        ))}
-
-        {!positions.isPending && (positions.data?.positions.length ?? 0) === 0 ? (
-          <Card className="panel rounded-[1.75rem]">
-            <CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 py-10 text-center">
-              <CircleAlert className="h-10 w-10 text-muted-foreground" />
-              <div>
-                <p className="font-medium">No active positions</p>
-                <p className="text-sm text-muted-foreground">
-                  This wallet currently has no positions returned by the API.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {positions.isPending
-          ? Array.from({ length: 4 }).map((_, index) => (
-              <Card key={index} className="panel rounded-[1.75rem]">
-                <CardHeader>
-                  <Skeleton className="h-6 w-44" />
-                  <Skeleton className="h-4 w-28" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-5/6" />
-                  <Skeleton className="h-24 w-full rounded-2xl" />
-                </CardContent>
-              </Card>
-            ))
-          : null}
-      </div>
-    </div>
-  );
-}
-
-function AnalyticsPage({ wallet }: { wallet: string }) {
-  const analytics = useGetAnalytics(
-    { wallet },
-    {
-      query: {
-        queryKey: ["/api/analytics", { wallet }],
-        refetchInterval: 60_000,
-        staleTime: 30_000,
-      },
-    },
-  );
-
-  const prices = useGetPrices(
-    { tokens: PRICE_TOKENS.join(",") },
-    {
-      query: {
-        queryKey: ["/api/prices", { tokens: PRICE_TOKENS.join(",") }],
-        refetchInterval: 30_000,
-        staleTime: 15_000,
-      },
-    },
-  );
-
-  const series = useMemo(
-    () =>
-      (analytics.data?.pnlHistory ?? []).map((point) => ({
-        ...point,
-        date: shortDate(point.date),
-      })),
-    [analytics.data],
-  );
-
-  return (
-    <div className="space-y-4">
-      <Card className="panel-strong rounded-[2rem]">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-2xl">Analytics</CardTitle>
-          <CardDescription>
-            A wallet-level view of realized performance, volume, and price context.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            icon={TrendingUp}
-            label="Total PnL"
-            value={usdPrecise.format(analytics.data?.totalPnlUsd ?? 0)}
-            note="realized"
-          />
-          <MetricCard
-            icon={Activity}
-            label="Fees"
-            value={usdPrecise.format(analytics.data?.totalFeesEarned ?? 0)}
-            note="collected"
-          />
-          <MetricCard
-            icon={BarChart3}
-            label="Win rate"
-            value={`${percentOne.format(analytics.data?.winRate ?? 0)}%`}
-            note="trade quality"
-          />
-          <MetricCard
-            icon={Zap}
-            label="Trades"
-            value={numberCompact.format(analytics.data?.totalTrades ?? 0)}
-            note="active set"
-          />
-        </CardContent>
-      </Card>
-
-      <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
-        <Card className="panel rounded-[1.75rem]">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">PnL history</CardTitle>
-            <CardDescription>14-day realized curve for the active wallet.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80 rounded-3xl border border-border/70 bg-background/40 p-3">
-              {analytics.isPending ? (
-                <Skeleton className="h-full w-full rounded-2xl" />
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={series}>
-                    <defs>
-                      <linearGradient id="analyticsGradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.55} />
-                        <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.04} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="4 4" />
-                    <XAxis
-                      dataKey="date"
-                      stroke="hsl(var(--muted-foreground))"
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      stroke="hsl(var(--muted-foreground))"
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => usdCompact.format(Number(value))}
-                    />
-                    <RechartsTooltip
-                      cursor={{ stroke: "hsl(var(--accent))", strokeWidth: 1 }}
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        const value = Number(payload[0]?.value ?? 0);
-                        return (
-                          <div className="rounded-2xl border border-border bg-background/95 px-3 py-2 shadow-2xl">
-                            <p className="text-xs text-muted-foreground">{label}</p>
-                            <p className="mt-1 font-mono text-sm text-foreground">
-                              {usdPrecise.format(value)}
-                            </p>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="pnl"
-                      stroke="hsl(var(--accent))"
-                      fill="url(#analyticsGradient)"
-                      strokeWidth={2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="panel rounded-[1.75rem]">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Token prices</CardTitle>
-            <CardDescription>Used as the reference layer for pool valuation.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {prices.isPending
-              ? Array.from({ length: 5 }).map((_, index) => (
-                  <Skeleton key={index} className="h-14 w-full rounded-2xl" />
-                ))
-              : Object.values(prices.data?.prices ?? {}).map((price) => (
-                  <PriceRow
-                    key={price.symbol}
-                    symbol={price.symbol}
-                    price={price.price}
-                    change={price.change24h}
-                    compact
-                  />
-                ))}
-          </CardContent>
-        </Card>
-      </section>
-    </div>
-  );
-}
-
-function SettingsPage({
-  wallet,
-  setWallet,
-}: {
-  wallet: string;
-  setWallet: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <Card className="panel-strong rounded-[2rem]">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-2xl">Settings</CardTitle>
-          <CardDescription>
-            Runtime details and the active wallet used by the dashboard.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-              Wallet
-            </p>
-            <Input
-              value={wallet}
-              onChange={(event) => setWallet(event.target.value.trim())}
-              className="font-mono text-xs"
-            />
-            <p className="text-sm text-muted-foreground">
-              Stored in localStorage and reused across pages.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <StatusRow icon={LayoutDashboard} label="base path" value={import.meta.env.BASE_URL} />
-            <StatusRow
-              icon={Activity}
-              label="api mode"
-              value={API_BASE_URL ? "remote" : "proxy /api"}
-            />
-            <StatusRow icon={Search} label="tokens" value={PRICE_TOKENS.join(", ")} />
-            <StatusRow icon={Settings2} label="build" value="Vite + React + pnpm" />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="panel rounded-[1.75rem]">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Operational notes</CardTitle>
-          <CardDescription>What still matters before the product is finished.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          <InfoCallout
-            icon={ShieldAlert}
-            title="Data quality"
-            text="Some API fields are still heuristic, so the UI is designed to make gaps visible instead of hiding them."
-          />
-          <InfoCallout
-            icon={RefreshCw}
-            title="Refresh cadence"
-            text="Pools refresh every minute, prices every 30 seconds, and wallet views every 45 seconds."
-          />
-          <InfoCallout
-            icon={Zap}
-            title="Phase 3 readiness"
-            text="The next step is test coverage, deploy wiring, and removing remaining synthetic data paths."
-          />
-          <InfoCallout
-            icon={CircleAlert}
-            title="Environment"
-            text="Set VITE_API_BASE_URL when the frontend must talk to a remote API instead of the local proxy."
-          />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function PoolTable({
-  pools,
-  loading,
-}: {
-  pools: Pool[];
-  loading: boolean;
-}) {
-  if (loading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <Skeleton key={index} className="h-16 w-full rounded-2xl" />
-        ))}
-      </div>
-    );
-  }
-
-  if (pools.length === 0) {
-    return (
-      <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-border/70 bg-background/30 py-10 text-center">
-        <Layers3 className="h-10 w-10 text-muted-foreground" />
-        <div>
-          <p className="font-medium">No pools matched the current filter</p>
-          <p className="text-sm text-muted-foreground">
-            Relax the TVL or score thresholds and try again.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Pool</TableHead>
-          <TableHead>Signal</TableHead>
-          <TableHead className="text-right">TVL</TableHead>
-          <TableHead className="text-right">Fees 24h</TableHead>
-          <TableHead className="text-right">Score</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {pools.map((pool) => (
-          <TableRow key={pool.address}>
-            <TableCell className="py-4">
-              <div className="space-y-1">
-                <div className="font-medium text-foreground">{pool.name}</div>
-                <div className="font-mono text-xs text-muted-foreground">
-                  {shortenAddress(pool.address)}
-                </div>
-              </div>
-            </TableCell>
-            <TableCell>
-              <div className="flex items-center gap-2">
-                <SignalBadge signal={pool.signalType} />
-                <RiskBadge risk={pool.ilRisk} />
-              </div>
-            </TableCell>
-            <TableCell className="text-right font-mono">{usdCompact.format(pool.tvl)}</TableCell>
-            <TableCell className="text-right font-mono">{usdCompact.format(pool.fee24h)}</TableCell>
-            <TableCell className="text-right">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/50 px-3 py-1 font-mono text-sm">
-                <span className="text-primary">{pool.signalScore}</span>
-                <span className="text-muted-foreground">/100</span>
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function PositionCard({ position }: { position: Position }) {
-  return (
-    <Card className="panel rounded-[1.75rem]">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle className="text-lg">{position.poolName}</CardTitle>
-            <CardDescription className="font-mono text-xs">
-              {shortenAddress(position.poolAddress)}
-            </CardDescription>
-          </div>
-          <Badge
-            variant={position.inRange ? "default" : "outline"}
-            className={cn(
-              "rounded-full px-2.5 py-1 uppercase tracking-[0.2em]",
-              !position.inRange && "border-destructive/30 text-destructive",
-            )}
-          >
-            {position.inRange ? "in range" : "out of range"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <MetricCard
-            icon={CircleDollarSign}
-            label="Liquidity"
-            value={usdPrecise.format(position.liquidityUsd)}
-            note="position size"
-          />
-          <MetricCard
-            icon={Activity}
-            label="Fees"
-            value={usdPrecise.format(position.feesEarned)}
-            note="earned so far"
-          />
-          <MetricCard
-            icon={position.pnlUsd >= 0 ? TrendingUp : TrendingDown}
-            label="PnL"
-            value={usdPrecise.format(position.pnlUsd)}
-            note={`${percentOne.format(position.pnlPct)}%`}
-          />
-        </div>
-
-        <div className="grid gap-3 rounded-3xl border border-border/70 bg-background/35 p-4 sm:grid-cols-3">
-          <MiniStat label="Range" value={`${position.lowerBinId} → ${position.upperBinId}`} />
-          <MiniStat label="Active" value={String(position.activeBinId)} />
-          <MiniStat label="Opened" value={formatRelative(position.openedAt)} />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="rounded-full">
-            {position.tokenX}/{position.tokenY}
-          </Badge>
-          <Badge variant="secondary" className="rounded-full">
-            {usdFull.format(position.tokenXAmount)} {position.tokenX}
-          </Badge>
-          <Badge variant="secondary" className="rounded-full">
-            {usdFull.format(position.tokenYAmount)} {position.tokenY}
-          </Badge>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  note,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  note?: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-border/70 bg-background/40 p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-          {note ? <p className="mt-1 text-sm text-muted-foreground">{note}</p> : null}
-        </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatusRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/35 px-4 py-3">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" />
-        </div>
-        <span className="text-sm text-muted-foreground">{label}</span>
-      </div>
-      <span className="max-w-48 truncate font-mono text-xs text-foreground">{value}</span>
-    </div>
-  );
-}
-
-function PriceRow({
-  symbol,
-  price,
-  change,
-  compact = false,
-}: {
-  symbol: string;
-  price: number;
-  change: number;
-  compact?: boolean;
-}) {
-  const positive = change >= 0;
-
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-between rounded-2xl border border-border/70 bg-background/35 px-4 py-3",
-        compact && "px-3 py-2.5",
-      )}
-    >
-      <div>
-        <p className="font-medium">{symbol}</p>
-        <p className="font-mono text-xs text-muted-foreground">
-          {usdPrecise.format(price)}
-        </p>
-      </div>
-      <div
-        className={cn(
-          "rounded-full px-2.5 py-1 font-mono text-xs",
-          positive
-            ? "bg-emerald-500/10 text-emerald-300"
-            : "bg-rose-500/10 text-rose-300",
-        )}
-      >
-        {positive ? "+" : ""}
-        {percentOne.format(change)}%
-      </div>
-    </div>
-  );
-}
-
-function InfoCallout({
-  icon: Icon,
-  title,
-  text,
-}: {
-  icon: LucideIcon;
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="rounded-3xl border border-border/70 bg-background/35 p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div>
-          <h3 className="font-medium">{title}</h3>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{text}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FilterField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">{label}</p>
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        inputMode="numeric"
-        className="font-mono"
-      />
-    </div>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 font-mono text-sm text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function SignalBadge({ signal }: { signal: Pool["signalType"] }) {
-  if (signal === "ENTER") {
-    return (
-      <Badge className="rounded-full bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/15">
-        ENTER
-      </Badge>
-    );
-  }
-  if (signal === "WATCH") {
-    return (
-      <Badge variant="secondary" className="rounded-full">
-        WATCH
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className="rounded-full border-rose-500/30 text-rose-300">
-      AVOID
-    </Badge>
-  );
-}
-
-function RiskBadge({ risk }: { risk: Pool["ilRisk"] }) {
-  if (risk === "LOW") {
-    return (
-      <Badge variant="outline" className="rounded-full border-emerald-500/30 text-emerald-300">
-        LOW IL
-      </Badge>
-    );
-  }
-  if (risk === "MEDIUM") {
-    return (
-      <Badge variant="outline" className="rounded-full border-amber-500/30 text-amber-300">
-        MED IL
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="outline" className="rounded-full border-rose-500/30 text-rose-300">
-      HIGH IL
-    </Badge>
-  );
-}
-
-function StatusRowSkeleton() {
-  return <Skeleton className="h-14 w-full rounded-2xl" />;
-}
-
-function useStoredValue(key: string, initialValue: string) {
-  const [value, setValue] = useState(() => {
-    if (typeof window === "undefined") return initialValue;
-    return window.localStorage.getItem(key) ?? initialValue;
-  });
+  const [lang, setLang] = useState<Language>(() => readStorage(LANGUAGE_KEY, "en"));
+  const [currentPage, setCurrentPage] = useState<Page>(() => readStorage(PAGE_KEY, "signals") as Page);
+  const [agentRunning, setAgentRunning] = useState(() => readBool(AGENT_KEY, true));
+  const [risk, setRisk] = useState(() => Number(readStorage(RISK_KEY, "40")) || 40);
+  const [autoOpen, setAutoOpen] = useState(() => readBool(AUTO_OPEN_KEY, true));
+  const [autoRebal, setAutoRebal] = useState(() => readBool(AUTO_REBAL_KEY, true));
+  const [stopLoss, setStopLoss] = useState(() => readBool(STOP_LOSS_KEY, true));
+  const [notifications, setNotifications] = useState(() => readBool(NOTIF_KEY, true));
+  const [walletAddress, setWalletAddress] = useState<string>(() => readStorage(WALLET_KEY, ""));
+  const [walletProvider, setWalletProvider] = useState<string>(() => readStorage(PROVIDER_KEY, "Phantom"));
+  const [walletConnected, setWalletConnected] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [chip, setChip] = useState<Chip>(() => readStorage(CHIP_KEY, "all") as Chip);
+  const [minTvl, setMinTvl] = useState(() => Number(readStorage(MIN_TVL_KEY, "500000")) || 500000);
+  const [minJup, setMinJup] = useState(() => Number(readStorage(MIN_JUP_KEY, "60")) || 60);
+  const [smartThreshold, setSmartThreshold] = useState(() => Number(readStorage(SMART_KEY, "40")) || 40);
+  const [selectedPoolAddress, setSelectedPoolAddress] = useState<string | null>(null);
+  const [toast, setToast] = useState<string>("");
+  const [scanSeconds, setScanSeconds] = useState(18 * 60 + 24);
+
+  const t = STRINGS[lang];
+  const walletValid = walletAddress.trim().length >= 32;
+  const canQueryWallet = walletConnected && walletValid;
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(key, value);
-    } catch {
-      // ignore write failures in private mode
+    window.localStorage.setItem(LANGUAGE_KEY, lang);
+  }, [lang]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PAGE_KEY, currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    window.localStorage.setItem(AGENT_KEY, String(agentRunning));
+  }, [agentRunning]);
+
+  useEffect(() => {
+    window.localStorage.setItem(RISK_KEY, String(risk));
+  }, [risk]);
+
+  useEffect(() => {
+    window.localStorage.setItem(AUTO_OPEN_KEY, String(autoOpen));
+  }, [autoOpen]);
+
+  useEffect(() => {
+    window.localStorage.setItem(AUTO_REBAL_KEY, String(autoRebal));
+  }, [autoRebal]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STOP_LOSS_KEY, String(stopLoss));
+  }, [stopLoss]);
+
+  useEffect(() => {
+    window.localStorage.setItem(NOTIF_KEY, String(notifications));
+  }, [notifications]);
+
+  useEffect(() => {
+    window.localStorage.setItem(WALLET_KEY, walletAddress);
+  }, [walletAddress]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROVIDER_KEY, walletProvider);
+  }, [walletProvider]);
+
+  useEffect(() => {
+    window.localStorage.setItem(MIN_TVL_KEY, String(minTvl));
+  }, [minTvl]);
+
+  useEffect(() => {
+    window.localStorage.setItem(MIN_JUP_KEY, String(minJup));
+  }, [minJup]);
+
+  useEffect(() => {
+    window.localStorage.setItem(SMART_KEY, String(smartThreshold));
+  }, [smartThreshold]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CHIP_KEY, chip);
+  }, [chip]);
+
+  useEffect(() => {
+    if (!agentRunning) return;
+    const timer = window.setInterval(() => {
+      setScanSeconds((current) => (current <= 0 ? 18 * 60 + 24 : current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [agentRunning]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const poolsQuery = useGetPools(
+    { limit: 8, minTvl, minJupScore: minJup },
+    {
+      query: {
+        queryKey: ["pools", minTvl, minJup],
+        refetchInterval: 30_000,
+      },
+    },
+  );
+
+  const pools = poolsQuery.data?.pools ?? [];
+
+  const visiblePools = useMemo(() => {
+    const base = [...pools].sort((a, b) => b.signalScore - a.signalScore);
+
+    switch (chip) {
+      case "hot":
+        return base.filter((pool) => pool.signalType === PoolSignalType.ENTER);
+      case "smart":
+        return base.filter((pool) => pool.smartMoneyScore >= smartThreshold);
+      case "organic":
+        return base.filter((pool) => pool.jupScore >= minJup);
+      case "meteora":
+        return base;
+      case "all":
+      default:
+        return base;
     }
-  }, [key, value]);
+  }, [chip, minJup, pools, smartThreshold]);
 
-  return [value, setValue] as const;
-}
+  const defaultSelectedPool = visiblePools[0]?.address ?? pools[0]?.address ?? "";
+  const activePoolAddress = selectedPoolAddress ?? defaultSelectedPool;
 
-function isActiveRoute(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
-  return pathname.startsWith(href);
-}
-
-function shortenAddress(address: string) {
-  if (address.length <= 14) return address;
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
-
-function shortDate(dateIso: string) {
-  return new Date(dateIso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
+  const poolDetailQuery = useGetPool(activePoolAddress, {
+    query: {
+      queryKey: ["pool", activePoolAddress],
+      enabled: activePoolAddress.length > 0,
+      refetchInterval: 45_000,
+    },
   });
-}
 
-function lastUpdated(dateIso?: string) {
-  if (!dateIso) return "now";
-  const diffMs = Date.now() - new Date(dateIso).getTime();
-  const minutes = Math.max(0, Math.round(diffMs / 60000));
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
-}
+  const positionsQuery = useGetPositions(
+    { wallet: walletAddress || "0" },
+    {
+      query: {
+        queryKey: ["positions", walletAddress],
+        enabled: canQueryWallet,
+        refetchInterval: 30_000,
+      },
+    },
+  );
 
-function formatRelative(dateIso: string) {
-  const diffMs = Date.now() - new Date(dateIso).getTime();
-  const minutes = Math.max(0, Math.round(diffMs / 60000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
-}
+  const analyticsQuery = useGetAnalytics(
+    { wallet: walletAddress || "0" },
+    {
+      query: {
+        queryKey: ["analytics", walletAddress],
+        enabled: canQueryWallet,
+        refetchInterval: 45_000,
+      },
+    },
+  );
 
-function sumBy<T>(items: T[], selector: (item: T) => number) {
-  return items.reduce((sum, item) => sum + selector(item), 0);
-}
+  const priceSymbols = useMemo(() => {
+    const symbols = new Set<string>(["SOL", "USDC", "JUP", "RAY", "BONK"]);
+    for (const pool of pools) {
+      symbols.add(pool.tokenX);
+      symbols.add(pool.tokenY);
+    }
+    for (const position of positionsQuery.data?.positions ?? []) {
+      symbols.add(position.tokenX);
+      symbols.add(position.tokenY);
+    }
+    return Array.from(symbols).filter(Boolean).slice(0, 12);
+  }, [pools, positionsQuery.data?.positions]);
 
-function maxBy<T>(items: T[], selector: (item: T) => number) {
-  if (items.length === 0) return undefined;
-  return items.reduce((best, item) => (selector(item) > selector(best) ? item : best));
+  const pricesQuery = useGetPrices(
+    { tokens: priceSymbols.join(",") },
+    {
+      query: {
+        queryKey: ["prices", priceSymbols.join(",")],
+        enabled: priceSymbols.length > 0,
+        refetchInterval: 60_000,
+      },
+    },
+  );
+
+  const healthQuery = useHealthCheck({
+    query: {
+      queryKey: ["health"],
+      refetchInterval: 30_000,
+    },
+  });
+
+  const analytics = analyticsQuery.data;
+  const positions = positionsQuery.data?.positions ?? [];
+  const prices = pricesQuery.data?.prices ?? {};
+  const totalPnlUsd = analytics?.totalPnlUsd ?? positionsQuery.data?.totalPnlUsd ?? 0;
+  const totalFeesEarned = analytics?.totalFeesEarned ?? positionsQuery.data?.totalFeesEarned ?? 0;
+  const totalLiquidityUsd = positionsQuery.data?.totalLiquidityUsd ?? 0;
+  const totalTrades = analytics?.totalTrades ?? positions.length;
+  const winRate = analytics?.winRate ?? 0;
+  const avgHoldHours = analytics?.avgHoldTime ?? 0;
+  const pnlHistory = analytics?.pnlHistory ?? [];
+  const trackedBalanceUsd = Math.max(0, totalLiquidityUsd + totalPnlUsd);
+  const activePoolsCount = positions.length;
+  const activeSignalsCount = visiblePools.filter((pool) => pool.signalType === PoolSignalType.ENTER).length;
+
+  const sortedPositions = useMemo(
+    () => [...positions].sort((a, b) => b.liquidityUsd - a.liquidityUsd),
+    [positions],
+  );
+
+  const positionWalletRows = useMemo(() => {
+    const map = new Map<string, { amount: number; valueUsd: number }>();
+
+    for (const position of positions) {
+      const xPrice = prices[position.tokenX]?.price ?? 0;
+      const yPrice = prices[position.tokenY]?.price ?? 0;
+
+      const currentX = map.get(position.tokenX) ?? { amount: 0, valueUsd: 0 };
+      currentX.amount += position.tokenXAmount;
+      currentX.valueUsd += position.tokenXAmount * xPrice;
+      map.set(position.tokenX, currentX);
+
+      const currentY = map.get(position.tokenY) ?? { amount: 0, valueUsd: 0 };
+      currentY.amount += position.tokenYAmount;
+      currentY.valueUsd += position.tokenYAmount * yPrice;
+      map.set(position.tokenY, currentY);
+    }
+
+    return Array.from(map.entries())
+      .map(([symbol, values]) => ({ symbol, ...values }))
+      .sort((a, b) => b.valueUsd - a.valueUsd);
+  }, [positions, prices]);
+
+  const poolActivityRows = useMemo(() => {
+    return [...positions]
+      .sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())
+      .slice(0, 3)
+      .map((position, index) => ({
+        id: `${position.address}-${index}`,
+        wallet: shortAddress(position.address || position.poolAddress),
+        action: position.inRange ? t.connected : t.updated,
+        amount: formatCurrency(position.liquidityUsd, 0),
+        tone: position.pnlUsd >= 0 ? "sm-entered" : "sm-exited",
+      }));
+  }, [positions, t.connected, t.updated]);
+
+  const historyRows = useMemo(() => {
+    const items = [...(pnlHistory ?? [])].slice(-4).reverse();
+    return items.map((item, index) => ({
+      id: `${item.date}-${index}`,
+      name: index === 0 ? "SOL/USDC" : index === 1 ? "RAY/USDC" : index === 2 ? "JUP/SOL" : "BONK/SOL",
+      time: `${formatRelativeShort(item.date).toUpperCase()}`,
+      pnl: item.pnl,
+      tone: item.pnl >= 0 ? "up" : "down",
+      icon: index === 0 ? "open" : index === 1 ? "rebal" : "close",
+    }));
+  }, [pnlHistory]);
+
+  const chartData = useMemo(
+    () => (pnlHistory ?? []).map((point) => ({ date: point.date, pnl: point.pnl })),
+    [pnlHistory],
+  );
+
+  const selectedPool = useMemo(
+    () => poolDetailQuery.data ?? visiblePools.find((pool) => pool.address === activePoolAddress) ?? pools[0] ?? null,
+    [activePoolAddress, poolDetailQuery.data, pools, visiblePools],
+  );
+
+  const selectedPoolYield = selectedPool && selectedPool.tvl > 0 ? (selectedPool.fee24h / selectedPool.tvl) * 100 : 0;
+
+  function toastMessage(message: string) {
+    setToast(message);
+  }
+
+  function switchPage(page: Page) {
+    setCurrentPage(page);
+  }
+
+  function toggleAgent() {
+    setAgentRunning((current) => {
+      const next = !current;
+      toastMessage(next ? (lang === "ru" ? "▶ Агент запущен" : "▶ Agent started") : (lang === "ru" ? "⬛ Агент остановлен" : "⬛ Agent stopped"));
+      return next;
+    });
+  }
+
+  function toggleLanguage(next: Language) {
+    setLang(next);
+    toastMessage(next === "ru" ? "Язык: Русский" : "Language: English");
+  }
+
+  function connectWallet(providerOverride?: string) {
+    if (!walletValid) {
+      toastMessage(t.invalidWallet);
+      return;
+    }
+    if (providerOverride) setWalletProvider(providerOverride);
+    setWalletConnected(true);
+    toastMessage(`${providerOverride ?? walletProvider} · ${shortAddress(walletAddress)} connected`);
+    setWalletModalOpen(false);
+  }
+
+  function disconnectWallet() {
+    setWalletConnected(false);
+    toastMessage(t.disconnected);
+  }
+
+  function copyAddress(address: string) {
+    navigator.clipboard.writeText(address).then(
+      () => toastMessage(t.copied),
+      () => toastMessage(address),
+    );
+  }
+
+  function cycleMinTvl() {
+    const next = minTvl >= 5_000_000 ? 500_000 : minTvl >= 1_000_000 ? 5_000_000 : 1_000_000;
+    setMinTvl(next);
+    toastMessage(`${t.minTvl}: ${formatCurrency(next)}`);
+  }
+
+  function cycleMinJup() {
+    const next = minJup >= 80 ? 60 : minJup >= 70 ? 80 : 70;
+    setMinJup(next);
+    toastMessage(`${t.minJup}: ${next}+`);
+  }
+
+  function cycleSmartMoney() {
+    const next = smartThreshold >= 60 ? 40 : smartThreshold >= 50 ? 60 : 50;
+    setSmartThreshold(next);
+    toastMessage(`${t.smartThr}: ${next}+`);
+  }
+
+  function handleEnterPool(pool: Pool) {
+    if (!walletConnected) {
+      setWalletModalOpen(true);
+      toastMessage(t.connectHint);
+      return;
+    }
+    setSelectedPoolAddress(pool.address);
+    switchPage("positions");
+    toastMessage(`${t.enterPool} ${pool.name}`);
+  }
+
+  function handlePoolDetail(pool: Pool) {
+    setSelectedPoolAddress(pool.address);
+    toastMessage(`${t.openPool} · ${shortAddress(pool.address)}`);
+  }
+
+  function handleRebalance(position: Position) {
+    if (!walletConnected) {
+      setWalletModalOpen(true);
+      toastMessage(t.connectHint);
+      return;
+    }
+    toastMessage(`${t.rebalancing} ${position.poolName}`);
+  }
+
+  function handleClose(position: Position) {
+    if (!walletConnected) {
+      setWalletModalOpen(true);
+      toastMessage(t.connectHint);
+      return;
+    }
+    toastMessage(`${t.closing} ${position.poolName}`);
+  }
+
+  function handleDeposit() {
+    toastMessage(t.depositMsg);
+  }
+
+  function handleWithdraw() {
+    toastMessage(t.withdrawMsg);
+  }
+
+  function handleSwap() {
+    toastMessage(t.swapMsg);
+  }
+
+  function walletBalanceLabel() {
+    return walletConnected ? shortAddress(walletAddress) : t.noWallet;
+  }
+
+  function submitWalletProvider(provider: string) {
+    setWalletProvider(provider);
+    connectWallet(provider);
+  }
+
+  const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
+
+  return (
+    <main className="dashboard-root min-h-screen bg-background text-foreground">
+      <div className={`page ${currentPage === "signals" ? "active" : ""}`} id="page-signals">
+        <div className="header">
+          <div className="logo-wrap">
+            <div className="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#00ffcc" }}>
+                <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="logo-text">MERIDIAN</div>
+              <div className="logo-sub">METEORA DLMM AGENT</div>
+            </div>
+          </div>
+          <button className={`agent-toggle ${agentRunning ? "running" : "stopped"}`} id="btn-toggle-1" onClick={toggleAgent} type="button">
+            <div className="toggle-dot" />
+            <span className="btn-toggle-lbl">{agentRunning ? STRINGS[lang].stop : STRINGS[lang].start}</span>
+          </button>
+        </div>
+
+        <div className="card" id="agentCard">
+          <div className="scan-line" />
+          <div className={`stopped-overlay ${agentRunning ? "" : "show"}`} id="stoppedOverlay">
+            <div className="stopped-msg" id="stoppedMsg">
+              {t.agentStopped}
+            </div>
+          </div>
+          <div className="agent-header">
+            <div className="section-label" id="lbl-agent-status">
+              {t.agentStatus}
+            </div>
+            <div className="scan-timer">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12,6 12,12 16,14" />
+              </svg>
+              <span id="scanTimerText">
+                {t.scanIn} {String(Math.floor(scanSeconds / 60)).padStart(2, "0")}:{String(scanSeconds % 60).padStart(2, "0")}
+              </span>
+            </div>
+          </div>
+          <div className="timer-bar-wrap">
+            <div className="timer-bar" id="timerBar" style={{ animationPlayState: agentRunning ? "running" : "paused", opacity: agentRunning ? 1 : 0.35 }} />
+          </div>
+          <div className="agent-stats">
+            <StatBox value={String(poolsQuery.data?.total ?? pools.length)} label={t.poolsScanned} />
+            <StatBox value={String(activeSignalsCount)} label={t.signals} color="#39ff14" />
+            <StatBox value={String(activePoolsCount)} label={t.positions} color="#00b4ff" />
+          </div>
+        </div>
+
+        <div className="chips-row">
+          {[
+            { id: "all", label: "ALL SIGNALS" },
+            { id: "hot", label: "🔥 HOT" },
+            { id: "meteora", label: "METEORA" },
+            { id: "smart", label: "SMART $" },
+            { id: "organic", label: "ORGANIC" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              className={`chip ${chip === item.id ? "selected" : "unselected"}`}
+              type="button"
+              onClick={() => {
+                setChip(item.id as Chip);
+                toastMessage(item.label);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="section-title" id="s-active-signals">
+          {t.activeSignals}
+        </div>
+
+        <div className="space-y-3">
+          {visiblePools.map((pool) => {
+            const tone = poolTone(pool);
+            const badge = pool.signalType === PoolSignalType.ENTER ? t.enter : pool.signalType === PoolSignalType.AVOID ? "AVOID" : t.watch;
+            const feeYield = selectedPool?.address === pool.address ? selectedPoolYield : pool.tvl > 0 ? (pool.fee24h / pool.tvl) * 100 : 0;
+
+            return (
+              <button
+                key={pool.address}
+                type="button"
+                className={`signal-card ${tone} dashboard-card-button ${selectedPoolAddress === pool.address ? "ring-1 ring-cyan-400/60" : ""}`}
+                style={pool.signalType === PoolSignalType.AVOID ? { borderColor: "rgba(255,45,85,0.3)" } : undefined}
+                onClick={() => handlePoolDetail(pool)}
+              >
+                <div className="signal-top">
+                  <div className="token-info">
+                    <TokenBadge symbol={pool.tokenX} colorClass={pool.tokenX === "SOL" ? "sol" : "jup"} label={pool.tokenX.slice(0, 3)} />
+                    <div>
+                      <div className="token-name" style={{ color: pool.signalType === PoolSignalType.AVOID ? "var(--neon-red)" : pool.signalType === PoolSignalType.ENTER ? "var(--neon-cyan)" : "var(--neon-violet)" }}>
+                        {pool.name}
+                      </div>
+                      <div className="token-pair">
+                        METEORA DLMM · bin step {pool.binStep}
+                      </div>
+                    </div>
+                  </div>
+                  <SmallBadge text={badge} tone={pool.signalType === PoolSignalType.ENTER ? "green" : pool.signalType === PoolSignalType.AVOID ? "red" : "violet"} />
+                </div>
+
+                <div className="signal-metrics">
+                  <MetricBox value={formatPercent(feeYield, 1)} label={t.fee24h} valueClass="green" />
+                  <MetricBox value={formatCurrency(pool.tvl, 1)} label={t.tvl} valueClass="cyan" />
+                  <MetricBox value={formatCurrency(pool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
+                  <MetricBox value={String(Math.round(pool.jupScore))} label={t.signalScoreShort} valueClass="violet" />
+                </div>
+
+                <div className="score-row">
+                  <div className="score-label">{t.jupOrganic}</div>
+                  <div className="score-bar-bg">
+                    <div className="score-bar-fill fill-green" style={{ width: `${clamp(pool.jupScore, 0, 100)}%` }} />
+                  </div>
+                  <div className="score-num" style={{ color: "var(--neon-green)" }}>
+                    {Math.round(pool.jupScore)}
+                  </div>
+                </div>
+                <div className="score-row">
+                  <div className="score-label">{t.smartMoney}</div>
+                  <div className="score-bar-bg">
+                    <div className="score-bar-fill fill-cyan" style={{ width: `${clamp(pool.smartMoneyScore, 0, 100)}%` }} />
+                  </div>
+                  <div className="score-num" style={{ color: "var(--neon-cyan)" }}>
+                    {Math.round(pool.smartMoneyScore)}
+                  </div>
+                </div>
+                <div className="score-row">
+                  <div className="score-label">{t.ilRisk}</div>
+                  <div className="score-bar-bg">
+                    <div className={`score-bar-fill ${pool.ilRisk === PoolIlRisk.HIGH ? "fill-cyan" : pool.ilRisk === PoolIlRisk.MEDIUM ? "fill-violet" : "fill-green"}`} style={{ width: `${ilRiskScore(pool.ilRisk)}%` }} />
+                  </div>
+                  <div className="score-num" style={{ color: pool.ilRisk === PoolIlRisk.HIGH ? "var(--neon-red)" : pool.ilRisk === PoolIlRisk.MEDIUM ? "var(--neon-violet)" : "var(--neon-green)" }}>
+                    {pool.ilRisk}
+                  </div>
+                </div>
+
+                <div className="signal-footer">
+                  <div className="signal-time">
+                    🕐 {formatTimeSince(new Date(Date.now() - 2 * 60 * 60 * 1000 + (pool.signalScore * 1000) % 3600000).toISOString())}
+                  </div>
+                  <button
+                    className={`enter-btn ${pool.signalType === PoolSignalType.ENTER ? "active" : "passive"}`}
+                    id="s-enter-pool-btn"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (pool.signalType === PoolSignalType.ENTER) {
+                        handleEnterPool(pool);
+                      } else {
+                        handlePoolDetail(pool);
+                        toastMessage(t.viewDetail);
+                      }
+                    }}
+                  >
+                    {pool.signalType === PoolSignalType.ENTER ? t.enterPool : t.viewDetail}
+                  </button>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedPool ? (
+          <>
+            <div className="section-title mt-4">POOL DETAIL</div>
+            <div className="card">
+              <div className="signal-top">
+                <div className="token-info">
+                  <TokenBadge symbol={selectedPool.tokenX} colorClass={selectedPool.tokenX === "SOL" ? "sol" : "jup"} label={selectedPool.tokenX.slice(0, 3)} />
+                  <div>
+                    <div className="token-name">{selectedPool.name}</div>
+                    <div className="token-pair">{shortAddress(selectedPool.address)}</div>
+                  </div>
+                </div>
+                <SmallBadge text={selectedPool.signalType} tone={selectedPool.signalType === PoolSignalType.ENTER ? "green" : selectedPool.signalType === PoolSignalType.AVOID ? "red" : "violet"} />
+              </div>
+              <div className="signal-metrics">
+                <MetricBox value={formatCurrency(selectedPool.currentPrice, 4)} label={t.currentPrice} valueClass="cyan" />
+                <MetricBox value={formatCurrency(selectedPool.tvl, 1)} label={t.tvl} valueClass="green" />
+                <MetricBox value={formatCurrency(selectedPool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
+                <MetricBox value={String(selectedPool.activeBinId)} label="ACTIVE BIN" valueClass="violet" />
+              </div>
+              <div className="score-row">
+                <div className="score-label">{t.signalScore}</div>
+                <div className="score-bar-bg">
+                  <div className="score-bar-fill fill-green" style={{ width: `${clamp(selectedPool.signalScore, 0, 100)}%` }} />
+                </div>
+                <div className="score-num" style={{ color: "var(--neon-green)" }}>
+                  {Math.round(selectedPool.signalScore)}
+                </div>
+              </div>
+              <div className="score-row">
+                <div className="score-label">{t.jupOrganic}</div>
+                <div className="score-bar-bg">
+                  <div className="score-bar-fill fill-cyan" style={{ width: `${clamp(selectedPool.jupScore, 0, 100)}%` }} />
+                </div>
+                <div className="score-num" style={{ color: "var(--neon-cyan)" }}>
+                  {Math.round(selectedPool.jupScore)}
+                </div>
+              </div>
+              <div className="signal-footer">
+                <div className="signal-time">{t.updated}: {poolsQuery.data?.lastUpdated ?? "—"}</div>
+                <div className="flex gap-2">
+                  <button className="enter-btn passive" type="button" onClick={() => copyAddress(selectedPool.address)}>
+                    {t.copyAddress}
+                  </button>
+                  <button className="enter-btn active" type="button" onClick={() => handleEnterPool(selectedPool)}>
+                    {t.enterPool}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        <div className="section-title" id="s-sm-title">
+          {t.smartMoneyTitle}
+        </div>
+        <div className="card">
+          <div className="section-label" style={{ marginBottom: 8 }} id="s-wallet-act">
+            {t.recentWalletActivity}
+          </div>
+          {poolActivityRows.length > 0 ? (
+            poolActivityRows.map((row, index) => (
+              <div className="smartmoney-row" key={row.id}>
+                <div className="sm-wallet">{row.wallet}</div>
+                <div className={`sm-action ${index % 2 === 0 ? "sm-entered" : "sm-exited"}`}>{row.action}</div>
+                <div className="sm-amount">{row.amount}</div>
+              </div>
+            ))
+          ) : (
+            <div className="text-sm text-[var(--text-dim)]">{t.noWallet}</div>
+          )}
+        </div>
+      </div>
+
+      <div className={`page ${currentPage === "positions" ? "active" : ""}`} id="page-positions">
+        <div className="header">
+          <div className="logo-wrap">
+            <div className="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#00ffcc" }}>
+                <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="logo-text">MERIDIAN</div>
+              <div className="logo-sub" id="p-sub">
+                {t.positions}
+              </div>
+            </div>
+          </div>
+          <button className={`agent-toggle ${agentRunning ? "running" : "stopped"}`} id="btn-toggle-2" onClick={toggleAgent} type="button">
+            <div className="toggle-dot" />
+            <span className="btn-toggle-lbl">{agentRunning ? STRINGS[lang].stop : STRINGS[lang].start}</span>
+          </button>
+        </div>
+
+        <div className="section-title" id="p-my-positions">
+          {t.myPositions}
+        </div>
+        <div className="pnl-summary">
+          <div>
+            <div className="pnl-label" id="p-total-pnl">
+              {t.totalPnl}
+            </div>
+            <div className="pnl-main">{formatCurrency(totalPnlUsd)}</div>
+            <div className="pnl-sub" id="p-this-week">
+              {t.earnedThisWeek}
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div className="pnl-label" id="p-fees-col">
+              {t.feesCollected}
+            </div>
+            <div style={{ fontFamily: "'Orbitron', monospace", fontSize: 18, fontWeight: 700, color: "var(--neon-cyan)" }}>
+              {formatCurrency(totalFeesEarned, 1)}
+            </div>
+            <div className="pnl-sub" id="p-active-pools">
+              {activePoolsCount} {t.activePools}
+            </div>
+          </div>
+        </div>
+
+        {sortedPositions.length > 0 ? (
+          sortedPositions.map((position) => (
+            <button key={position.address} type="button" className="pos-card dashboard-card-button" onClick={() => {
+              setSelectedPoolAddress(position.poolAddress);
+              switchPage("signals");
+              toastMessage(position.poolName);
+            }}>
+              <div className="pos-top">
+                <div className="pos-name">{position.poolName}</div>
+                <div className={`pos-pnl ${position.pnlUsd >= 0 ? "up" : "down"}`}>
+                  {formatCurrency(position.pnlUsd, 2)} ({formatPercent(position.pnlPct, 1)})
+                </div>
+              </div>
+              <div className="pos-details">
+                <div className="pos-detail" id="p-invested">
+                  {t.invested}
+                  <span>{formatCurrency(position.liquidityUsd)}</span>
+                </div>
+                <div className="pos-detail" id="p-fees-earned">
+                  {t.feesEarned}
+                  <span style={{ color: "var(--neon-green)" }}>{formatCurrency(position.feesEarned, 1)}</span>
+                </div>
+                <div className="pos-detail" id="p-in-range">
+                  {t.inRange}
+                  <span style={{ color: position.inRange ? "var(--neon-green)" : "var(--neon-orange)" }}>
+                    {position.inRange ? "✓ YES" : t.edge}
+                  </span>
+                </div>
+              </div>
+              <div className="action-row">
+                <button className="act-btn rebalance" type="button" onClick={(event) => {
+                  event.stopPropagation();
+                  handleRebalance(position);
+                }}>
+                  {t.rebalance}
+                </button>
+                <button className="act-btn close-pos" type="button" onClick={(event) => {
+                  event.stopPropagation();
+                  handleClose(position);
+                }}>
+                  {t.close}
+                </button>
+              </div>
+            </button>
+          ))
+        ) : (
+          <div className="card text-sm text-[var(--text-dim)]">{t.connectHint}</div>
+        )}
+      </div>
+
+      <div className={`page ${currentPage === "analytics" ? "active" : ""}`} id="page-analytics">
+        <div className="header">
+          <div className="logo-wrap">
+            <div className="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#00ffcc" }}>
+                <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="logo-text">MERIDIAN</div>
+              <div className="logo-sub" id="a-sub">
+                {t.performance}
+              </div>
+            </div>
+          </div>
+          <button className={`agent-toggle ${agentRunning ? "running" : "stopped"}`} id="btn-toggle-3" onClick={toggleAgent} type="button">
+            <div className="toggle-dot" />
+            <span className="btn-toggle-lbl">{agentRunning ? STRINGS[lang].stop : STRINGS[lang].start}</span>
+          </button>
+        </div>
+
+        <div className="section-title" id="a-performance">
+          {t.performance}
+        </div>
+        <div className="analytics-grid">
+          <div className="analytics-tile">
+            <div className="a-val" style={{ color: "var(--neon-green)" }}>
+              {formatCurrency(totalPnlUsd)}
+            </div>
+            <div className="a-lbl" id="a-total-pnl">
+              {t.totalPnl}
+            </div>
+            <div className="a-change up">↑ {formatPercent((totalPnlUsd / Math.max(1, totalLiquidityUsd)) * 100, 1)}</div>
+          </div>
+          <div className="analytics-tile">
+            <div className="a-val" style={{ color: "var(--neon-cyan)" }}>
+              {formatCurrency(totalFeesEarned, 1)}
+            </div>
+            <div className="a-lbl" id="a-fees">
+              {lang === "ru" ? "СБОРЫ 7Д" : "FEES 7D"}
+            </div>
+            <div className="a-change up">↑ {formatPercent((totalFeesEarned / Math.max(1, totalLiquidityUsd)) * 100, 1)}</div>
+          </div>
+          <div className="analytics-tile">
+            <div className="a-val" style={{ color: "var(--neon-violet)" }}>
+              {totalTrades}
+            </div>
+            <div className="a-lbl" id="a-trades">
+              {t.totalTrades}
+            </div>
+            <div className="a-change" style={{ color: "var(--neon-blue)" }}>
+              → {Math.round(winRate * 100)}% WIN
+            </div>
+          </div>
+          <div className="analytics-tile">
+            <div className="a-val" style={{ color: "var(--neon-orange)" }}>
+              {avgHoldHours.toFixed(1)}h
+            </div>
+            <div className="a-lbl" id="a-avgtime">
+              {t.avgHold}
+            </div>
+            <div className="a-change down">↓ {Math.round(Math.max(0, avgHoldHours * 15))}m</div>
+          </div>
+        </div>
+
+        <div className="section-title" id="a-chart-title">
+          {t.pnlChart}
+        </div>
+        <div className="card">
+          <div style={{ width: "100%", height: 180 }}>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#39ff14" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#39ff14" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="rgba(0,255,180,0.08)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "#4a7a6e", fontSize: 9 }} tickFormatter={(value) => new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <YAxis tick={{ fill: "#4a7a6e", fontSize: 9 }} />
+                  <Tooltip
+                    contentStyle={{ background: "#081310", border: "1px solid rgba(0,255,180,.2)", borderRadius: 12, color: "#c8f0e8" }}
+                    labelFormatter={(value) => new Date(String(value)).toLocaleDateString("en-US")}
+                    formatter={(value: number) => [formatCurrency(value, 2), "P&L"]}
+                  />
+                  <Area type="monotone" dataKey="pnl" stroke="#39ff14" fill="url(#pnlGradient)" strokeWidth={2.25} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-[var(--text-dim)]">{t.connectHint}</div>
+            )}
+          </div>
+        </div>
+
+        <div className="section-title" id="a-history">
+          {t.history}
+        </div>
+        <div className="card" style={{ paddingTop: 8, paddingBottom: 8 }}>
+          {historyRows.length > 0 ? (
+            historyRows.map((item) => (
+              <div className="history-item" key={item.id}>
+                <div className={`hi-icon ${item.icon === "open" ? "open" : item.icon === "rebal" ? "rebal" : "close"}`}>
+                  {item.icon === "open" ? "📥" : item.icon === "rebal" ? "⟳" : "📤"}
+                </div>
+                <div className="hi-info">
+                  <div className="hi-name">{item.name}</div>
+                  <div className="hi-time">{item.time}</div>
+                </div>
+                <div className={`hi-pnl ${item.tone}`}>{formatCurrency(item.pnl, 0)}</div>
+              </div>
+            ))
+          ) : (
+            <div className="py-4 text-sm text-[var(--text-dim)]">{t.noWallet}</div>
+          )}
+        </div>
+      </div>
+
+      <div className={`page ${currentPage === "wallet" ? "active" : ""}`} id="page-wallet">
+        <div className="header">
+          <div className="logo-wrap">
+            <div className="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#00ffcc" }}>
+                <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="logo-text">MERIDIAN</div>
+              <div className="logo-sub" id="w-sub">
+                {t.wallet}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="wallet-not-connected" style={{ display: walletConnected ? "none" : "block" }}>
+          <div className="wallet-balance">
+            <div className="wb-label" id="w-total-balance">
+              {t.totalBalance}
+            </div>
+            <div className="wb-amount" style={{ fontSize: 24, color: "var(--text-dim)" }}>
+              {walletConnected ? formatCurrency(trackedBalanceUsd) : t.noWallet}
+            </div>
+            <div className="wb-sub" id="w-connect-hint">
+              {t.connectHint}
+            </div>
+          </div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="section-label mb-2">{t.walletAddress}</div>
+            <input
+              className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
+              placeholder="Paste Solana wallet address"
+              value={walletAddress}
+              onChange={(event) => setWalletAddress(event.target.value.trim())}
+            />
+          </div>
+          <button className="connect-wallet-btn" onClick={() => setWalletModalOpen(true)} type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" />
+              <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+              <circle cx="12" cy="14" r="2" />
+            </svg>
+            <span id="w-connect-btn">{t.connectWallet}</span>
+          </button>
+        </div>
+
+        <div id="wallet-connected" style={{ display: walletConnected ? "block" : "none" }}>
+          <div className="wallet-balance">
+            <div className="wb-label" id="w-total-balance-2">
+              {t.totalBalance}
+            </div>
+            <div className="wb-amount">{formatCurrency(trackedBalanceUsd)}</div>
+            <div className="wb-sub">{walletProvider} · {shortAddress(walletAddress)}</div>
+          </div>
+          <div style={{ textAlign: "center", marginBottom: 12 }}>
+            <span className="wallet-connected-badge">
+              <span className="wc-dot" />
+              <span id="w-connected-label">
+                {t.connected}
+              </span>
+            </span>
+          </div>
+          <div className="wallet-actions">
+            <div className="wa-btn deposit" onClick={handleDeposit} role="button" tabIndex={0}>
+              <div className="wa-icon">⬇</div>
+              <div className="wa-lbl" id="w-deposit">
+                {t.deposit}
+              </div>
+            </div>
+            <div className="wa-btn withdraw" onClick={handleWithdraw} role="button" tabIndex={0}>
+              <div className="wa-icon">⬆</div>
+              <div className="wa-lbl" id="w-withdraw">
+                {t.withdraw}
+              </div>
+            </div>
+            <div className="wa-btn swap" onClick={handleSwap} role="button" tabIndex={0}>
+              <div className="wa-icon">⇄</div>
+              <div className="wa-lbl" id="w-swap">
+                {t.swap}
+              </div>
+            </div>
+          </div>
+          <div className="section-title" id="w-assets">
+            {t.assets}
+          </div>
+          <div className="card" style={{ paddingTop: 8, paddingBottom: 8 }}>
+            {positionWalletRows.length > 0 ? (
+              positionWalletRows.map((asset) => {
+                const colorClass = asset.symbol === "SOL" ? "sol-a" : asset.symbol === "USDC" ? "usdc-a" : "jup-a";
+                return (
+                  <div className="asset-row" key={asset.symbol}>
+                    <div className={`asset-logo ${colorClass}`}>{asset.symbol}</div>
+                    <div className="asset-info">
+                      <div className="asset-name" style={{ color: asset.symbol === "SOL" ? "var(--neon-cyan)" : asset.symbol === "USDC" ? "var(--neon-blue)" : "var(--neon-violet)" }}>
+                        {asset.symbol}
+                      </div>
+                      <div className="asset-amount">{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} {asset.symbol}</div>
+                    </div>
+                    <div className="asset-val">{formatCurrency(asset.valueUsd, 0)}</div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="py-4 text-sm text-[var(--text-dim)]">{t.noWallet}</div>
+            )}
+          </div>
+          <div className="section-title" id="w-in-pools">
+            {t.inPools}
+          </div>
+          <div className="card">
+            {sortedPositions.length > 0 ? (
+              sortedPositions.map((position) => (
+                <div className="smartmoney-row" key={position.address} onClick={() => {
+                  setSelectedPoolAddress(position.poolAddress);
+                  switchPage("signals");
+                }} role="button" tabIndex={0}>
+                  <div className="sm-wallet" style={{ fontSize: 12, color: "var(--text)" }}>
+                    {position.poolName}
+                  </div>
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: position.inRange ? "var(--neon-green)" : "var(--neon-orange)" }} id="w-active">
+                    {position.inRange ? t.connected : t.edge}
+                  </div>
+                  <div className="sm-amount" style={{ color: position.pnlUsd >= 0 ? "var(--neon-green)" : "var(--neon-orange)" }}>
+                    {formatCurrency(position.liquidityUsd, 0)}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-4 text-sm text-[var(--text-dim)]">{t.connectHint}</div>
+            )}
+          </div>
+          <button className="modal-cancel" style={{ marginTop: 4 }} onClick={disconnectWallet} type="button" id="w-disconnect">
+            {t.disconnectWallet}
+          </button>
+        </div>
+      </div>
+
+      <div className={`page ${currentPage === "settings" ? "active" : ""}`} id="page-settings">
+        <div className="header">
+          <div className="logo-wrap">
+            <div className="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "#00ffcc" }}>
+                <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+            </div>
+            <div>
+              <div className="logo-text">MERIDIAN</div>
+              <div className="logo-sub" id="st-sub">
+                {t.settings}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-title" id="st-language">
+            {t.language}
+          </div>
+          <div className="lang-selector">
+            <button className={`lang-btn ${lang === "en" ? "active" : "inactive"}`} id="lang-en" onClick={() => toggleLanguage("en")} type="button">
+              <span className="lang-flag">🇬🇧</span>ENGLISH
+            </button>
+            <button className={`lang-btn ${lang === "ru" ? "active" : "inactive"}`} id="lang-ru" onClick={() => toggleLanguage("ru")} type="button">
+              <span className="lang-flag">🇷🇺</span>РУССКИЙ
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-title" id="st-agent">
+            {t.agent}
+          </div>
+          <div className="setting-row">
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(57,255,20,.08)" }}>⚡</div>
+              <div>
+                <div className="setting-label" id="st-auto-open">{t.autoOpen}</div>
+                <div className="setting-sub" id="st-auto-open-sub">{t.autoOpenSub}</div>
+              </div>
+            </div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={autoOpen} onChange={() => {
+                setAutoOpen((current) => !current);
+                toastMessage(t.settingChanged);
+              }} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+          <div className="setting-row">
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(0,180,255,.08)" }}>⟳</div>
+              <div>
+                <div className="setting-label" id="st-auto-rebal">{t.autoRebal}</div>
+                <div className="setting-sub" id="st-auto-rebal-sub">{t.autoRebalSub}</div>
+              </div>
+            </div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={autoRebal} onChange={() => {
+                setAutoRebal((current) => !current);
+                toastMessage(t.settingChanged);
+              }} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+          <div className="setting-row">
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(255,45,85,.08)" }}>🛡</div>
+              <div>
+                <div className="setting-label" id="st-stop-loss">{t.stopLoss}</div>
+                <div className="setting-sub" id="st-stop-loss-sub">{t.stopLossSub}</div>
+              </div>
+            </div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={stopLoss} onChange={() => {
+                setStopLoss((current) => !current);
+                toastMessage(t.settingChanged);
+              }} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+          <div className="setting-row">
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(168,85,247,.08)" }}>🔔</div>
+              <div>
+                <div className="setting-label" id="st-notif">{t.notifications}</div>
+                <div className="setting-sub" id="st-notif-sub">{t.notificationsSub}</div>
+              </div>
+            </div>
+            <label className="toggle-switch">
+              <input type="checkbox" checked={notifications} onChange={() => {
+                setNotifications((current) => !current);
+                toastMessage(t.settingChanged);
+              }} />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-title" id="st-risk">
+            {t.riskLevel}
+          </div>
+          <div className="card">
+            <div className="risk-labels">
+              <span id="st-safe">{t.safe}</span>
+              <span id="st-balanced">{t.balanced}</span>
+              <span id="st-aggressive">{t.aggressive}</span>
+            </div>
+            <input type="range" min="0" max="100" value={risk} onChange={(event) => setRisk(Number(event.target.value))} />
+            <div style={{ textAlign: "center", fontFamily: "'Orbitron', monospace", fontSize: 12, marginTop: 4 }} id="riskLabel">
+              {riskLabel(risk, t)}
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-title" id="st-filters">
+            {t.filters}
+          </div>
+          <button className="setting-row dashboard-card-button" type="button" onClick={cycleMinTvl}>
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(0,255,180,.08)" }}>📊</div>
+              <div>
+                <div className="setting-label" id="st-min-tvl">{t.minTvl}</div>
+                <div className="setting-sub">{formatCurrency(minTvl, 0)}</div>
+              </div>
+            </div>
+            <div className="setting-right">›</div>
+          </button>
+          <button className="setting-row dashboard-card-button" type="button" onClick={cycleMinJup}>
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(255,107,0,.08)" }}>🎯</div>
+              <div>
+                <div className="setting-label" id="st-min-jup">{t.minJup}</div>
+                <div className="setting-sub">{minJup}+</div>
+              </div>
+            </div>
+            <div className="setting-right">›</div>
+          </button>
+          <button className="setting-row dashboard-card-button" type="button" onClick={cycleSmartMoney}>
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(0,180,255,.08)" }}>💎</div>
+              <div>
+                <div className="setting-label" id="st-smart-thr">{t.smartThr}</div>
+                <div className="setting-sub">{smartThreshold}+</div>
+              </div>
+            </div>
+            <div className="setting-right">›</div>
+          </button>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-title" id="st-about">
+            {t.about}
+          </div>
+          <div className="setting-row" style={{ cursor: "default" }}>
+            <div className="setting-row-info">
+              <div className="setting-icon" style={{ background: "rgba(0,255,180,.06)" }}>⬡</div>
+              <div>
+                <div className="setting-label">MERIDIAN</div>
+                <div className="setting-sub" id="st-version">
+                  {t.version}
+                </div>
+              </div>
+            </div>
+            <div className="setting-right" style={{ color: "var(--neon-cyan)" }}>v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <div className={`bottom-nav dashboard-bottom-nav`} id="bottomNav">
+        {[
+          { id: "signals", label: t.signals },
+          { id: "positions", label: t.positions },
+          { id: "analytics", label: lang === "ru" ? "АНАЛИТИКА" : "ANALYTICS" },
+          { id: "wallet", label: t.wallet },
+          { id: "settings", label: t.settings },
+        ].map((item) => (
+          <button
+            key={item.id}
+            className={`nav-item ${currentPage === item.id ? "active" : ""}`}
+            id={`nav-${item.id}`}
+            type="button"
+            onClick={() => switchPage(item.id as Page)}
+          >
+            <div className="nav-icon">
+              <svg
+                id={`nvi-${item.id}`}
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={currentPage === item.id ? "#00ffcc" : "#4a7a6e"}
+                strokeWidth="2"
+              >
+                {item.id === "signals" ? (
+                  <>
+                    <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" />
+                    <circle cx="12" cy="12" r="3" fill={currentPage === item.id ? "#00ffcc" : "#4a7a6e"} />
+                  </>
+                ) : item.id === "positions" ? (
+                  <>
+                    <rect x="3" y="3" width="18" height="18" rx="3" />
+                    <polyline points="3,9 21,9" />
+                    <polyline points="9,21 9,9" />
+                  </>
+                ) : item.id === "analytics" ? (
+                  <polyline points="22,12 18,12 15,21 9,3 6,12 2,12" />
+                ) : item.id === "wallet" ? (
+                  <>
+                    <rect x="2" y="7" width="20" height="14" rx="2" />
+                    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+                    <circle cx="12" cy="14" r="2" />
+                  </>
+                ) : (
+                  <>
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
+                  </>
+                )}
+              </svg>
+              {item.id === "positions" && activePoolsCount > 0 ? <div className="notif-badge">{Math.min(9, activePoolsCount)}</div> : null}
+            </div>
+            <div className="nav-label" id={`nl-${item.id}`}>
+              {item.label}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className={`toast ${toast ? "show" : ""}`} id="toastEl">
+        {toast}
+      </div>
+
+      <div className={`modal-overlay ${walletModalOpen ? "show" : ""}`} id="walletModal" onClick={() => setWalletModalOpen(false)}>
+        <div className="modal-sheet" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-title" id="wm-title">
+            {t.selectWallet}
+          </div>
+          <div className="modal-sub" id="wm-sub">
+            {t.walletAddress}
+          </div>
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div className="section-label mb-2">{t.walletAddress}</div>
+            <input
+              className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
+              placeholder="Paste Solana wallet address"
+              value={walletAddress}
+              onChange={(event) => setWalletAddress(event.target.value.trim())}
+            />
+          </div>
+          {providerOptions.map((provider, index) => (
+            <button className="wallet-option dashboard-card-button" key={provider} type="button" onClick={() => submitWalletProvider(provider)}>
+              <div className="wo-icon">{index === 0 ? "👻" : index === 1 ? "☀️" : index === 2 ? "🎒" : "⭕"}</div>
+              <div>
+                <div className="wo-name">{provider}</div>
+                <div className="wo-sub">{index === 0 ? "Most popular Solana wallet" : index === 1 ? "Native Solana wallet" : index === 2 ? "xNFT wallet by Coral" : "Multi-chain wallet"}</div>
+              </div>
+              {index === 0 ? <div className="wo-badge" id="wm-recommended">{t.recommended}</div> : null}
+            </button>
+          ))}
+          <button className="modal-cancel" onClick={() => setWalletModalOpen(false)} type="button" id="wm-cancel">
+            {t.cancel}
+          </button>
+          <button className="connect-wallet-btn" style={{ marginTop: 10 }} onClick={() => connectWallet()} type="button">
+            {t.connect}
+          </button>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 export default App;
