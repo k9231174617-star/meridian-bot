@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type { MarketSnapshot, PoolSnapshot, Signal, TradeAction } from "./domain.js";
+import { calculateImpermanentLossPct } from "./analytics.js";
+import { recommendDynamicSlippageBps } from "./slippage.js";
 
 export type SignalContext = {
   previous?: MarketSnapshot;
@@ -22,6 +24,7 @@ export class SignalEngine {
       let capitalScale = 0.25;
       let slippageBps = 50;
       let priorityFeeMicroLamports = 1_500;
+      const impermanentLossPct = previous ? Math.abs(calculateImpermanentLossPct(previous.currentPrice, pool.currentPrice)) : 0;
 
       if (pool.ilRisk === "HIGH" && baseScore < 70) {
         type = "RISK_EXIT";
@@ -30,7 +33,7 @@ export class SignalEngine {
         capitalScale = 0.15;
         confidence = Math.max(confidence, 0.7);
         severity = 90;
-        slippageBps = 35;
+        slippageBps = recommendDynamicSlippageBps(pool, action, 35, pool.tvlUsd * capitalScale, 150);
         priorityFeeMicroLamports = 2_000;
       } else if (deltas.liquidityPct > 20 && deltas.volumePct > 20 && pool.ilRisk !== "HIGH") {
         type = "LIQUIDITY_SURGE";
@@ -40,7 +43,7 @@ export class SignalEngine {
         capitalScale = 0.2;
         confidence = Math.min(0.95, confidence + 0.18);
         severity = Math.min(100, severity + 12);
-        slippageBps = 60;
+        slippageBps = recommendDynamicSlippageBps(pool, action, 60, pool.tvlUsd * capitalScale, 150);
         priorityFeeMicroLamports = 1_800;
       } else if (Math.abs(pool.currentPrice) > 0 && Math.abs(deltas.pricePct) > 12) {
         type = "PRICE_DISLOCATION";
@@ -50,7 +53,7 @@ export class SignalEngine {
         capitalScale = 0.18;
         confidence = Math.min(0.9, confidence + 0.12);
         severity = Math.min(100, severity + 18);
-        slippageBps = 70;
+        slippageBps = recommendDynamicSlippageBps(pool, action, 70, pool.tvlUsd * capitalScale, 150);
         priorityFeeMicroLamports = 2_200;
       } else if (pool.feeRatePct > 0.4 && pool.jupScore >= 65) {
         type = "FEE_MOMENTUM";
@@ -60,14 +63,23 @@ export class SignalEngine {
         capitalScale = 0.22;
         confidence = Math.min(0.92, confidence + 0.1);
         severity = Math.min(100, severity + 8);
-        slippageBps = 55;
+        slippageBps = recommendDynamicSlippageBps(pool, action, 55, pool.tvlUsd * capitalScale, 150);
         priorityFeeMicroLamports = 1_600;
+      }
+
+      if (slippageBps <= 0) {
+        slippageBps = recommendDynamicSlippageBps(pool, action, 50, pool.tvlUsd * capitalScale, 150);
       }
 
       if (deltas.liquidityPct < -15 || deltas.volumePct < -20) {
         reasons.push("Liquidity or volume weakening vs previous cycle");
         severity = Math.max(severity, 70);
         confidence = Math.max(0.45, confidence - 0.08);
+      }
+
+      if (impermanentLossPct > 5) {
+        reasons.push(`Estimated impermanent loss ${impermanentLossPct.toFixed(2)}%`);
+        severity = Math.min(100, severity + 6);
       }
 
       if (action !== "WAIT") {
@@ -83,6 +95,7 @@ export class SignalEngine {
           capitalUsd: round2(pool.tvlUsd * capitalScale),
           slippageBps,
           priorityFeeMicroLamports,
+          impermanentLossPct: round2(impermanentLossPct * 100),
         });
 
         signals.push({
@@ -98,6 +111,7 @@ export class SignalEngine {
           suggestedCapitalUsd: round2(pool.tvlUsd * capitalScale),
           slippageBps,
           priorityFeeMicroLamports,
+          impermanentLossPct: round2(impermanentLossPct * 100),
           createdAt,
         });
       }

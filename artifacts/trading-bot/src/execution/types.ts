@@ -53,6 +53,12 @@ export type ExecutionCommand = {
   slippageBps: number;
   priorityFeeMicrolamports: number;
   computeUnits: number;
+  useJito?: boolean;
+  jitoBlockEngineUrl?: string;
+  jitoTipLamports?: number;
+  jitoDontFrontTag?: string;
+  simulateHoneypot?: boolean;
+  maxHoneypotLossBps?: number;
 };
 
 export type ExecutionResult = {

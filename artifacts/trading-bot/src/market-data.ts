@@ -128,6 +128,9 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
     record.freeze_authority_revoked ?? record.freezeAuthorityRevoked ?? record.freeze_authority_disabled,
   );
   const liquidityLocked = toOptionalBoolean(record.liquidity_locked ?? record.liquidityLocked ?? record.lp_locked);
+  const topHolderSharePct = toOptionalNumber(record.top_holder_share_pct ?? record.topHolderSharePct ?? record.top_holders_pct);
+  const rugRiskScore = toOptionalNumber(record.rug_risk_score ?? record.rugRiskScore ?? record.risk_score);
+  const tokenSafetyScore = toOptionalNumber(record.token_safety_score ?? record.tokenSafetyScore ?? record.safety_score);
   const jupScore = computeJupScore(tvlUsd, volume24hUsd, feeRatePct, binStep);
   const smartMoneyScore = computeSmartMoneyScore(tvlUsd, volume24hUsd, feeRatePct);
   const signalScore = Math.round(jupScore * 0.5 + smartMoneyScore * 0.3 + feeRatePct * 2);
@@ -146,6 +149,9 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
     mintAuthorityRevoked,
     freezeAuthorityRevoked,
     liquidityLocked,
+    topHolderSharePct,
+    rugRiskScore,
+    tokenSafetyScore,
     tvlUsd,
     volume24hUsd,
     fee24hUsd,
@@ -221,6 +227,11 @@ function toString(value: unknown) {
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toOptionalNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function fetchPriceMap(ids: string, apiKey?: string): Promise<Record<string, any>> {

@@ -29,6 +29,9 @@ export async function runBacktest(config: BotConfig, snapshots: MarketSnapshot[]
       const intent = risk.buildIntent(signal, decision, "paper");
       const result = await executor.execute(intent);
       metrics.recordExecution(result);
+      if (typeof signal.impermanentLossPct === "number" && signal.action !== "SWAP") {
+        metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (signal.impermanentLossPct / 100));
+      }
       state = {
         ...state,
         openExposureUsd: state.openExposureUsd + result.filledUsd,

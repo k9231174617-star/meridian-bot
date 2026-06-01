@@ -56,6 +56,7 @@ function createSwapCommand(): ExecutionCommand {
     slippageBps: 50,
     priorityFeeMicrolamports: 12_000,
     computeUnits: 400_000,
+    simulateHoneypot: false,
   };
 }
 

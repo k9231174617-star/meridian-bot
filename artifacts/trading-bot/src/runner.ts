@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { loadConfig, resolveSignerSecretKey } from "./config.js";
-import { createStorage } from "./storage.js";
+import { createStorage, type BotStorage } from "./storage.js";
 import { DirectMarketDataProvider, LocalApiMarketDataProvider } from "./market-data.js";
 import { SignalEngine } from "./signals.js";
 import { RiskEngine, type RiskState } from "./risk.js";
 import { PaperExecutionClient, DryRunExecutionClient, JupiterSwapExecutionClient } from "./execution.js";
 import { BotMetrics } from "./observability.js";
 import { createAlertSink } from "./alerts.js";
-import type { BotMode, MarketSnapshot, TradeIntent } from "./domain.js";
+import { TokenSafetyInspector } from "./security.js";
+import type { BotMode, MarketSnapshot, RetryJob, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
   maxCycles?: number;
@@ -26,6 +27,15 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   const provider = config.provider === "local-api"
     ? new LocalApiMarketDataProvider(config.marketDataBaseUrl)
     : new DirectMarketDataProvider(25, 100_000, config.jupiterApiKey);
+  const safetyInspector = config.enableAntiScam && config.rpcUrl
+    ? new TokenSafetyInspector({
+      rpcUrl: config.rpcUrl,
+      rugcheckApiUrl: config.rugcheckApiUrl,
+      rugcheckApiKey: config.rugcheckApiKey,
+      maxTopHolderSharePct: config.risk.maxTopHolderSharePct,
+      maxRugRiskScore: config.risk.maxRugRiskScore,
+    })
+    : null;
 
   const storage = await createStorage(config.databaseUrl, { storageDir: config.storageDir });
   const alertSink = createAlertSink(config.alertWebhookUrl);
@@ -40,6 +50,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   const runId = storage ? await storage.saveRunStart(config, startedAt) : 0;
   let runStatus: "completed" | "failed" = "completed";
   const seenSignalIds = new Set<string>();
+  const retryBackoffMs = config.retryBackoffMs.length > 0 ? config.retryBackoffMs : [1_000, 3_000, 10_000];
 
   metrics.recordRunStart(startedAt);
 
@@ -59,6 +70,20 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       let snapshot;
       try {
         snapshot = await provider.fetchSnapshot();
+        if (safetyInspector) {
+          try {
+            snapshot = await safetyInspector.enrichSnapshot(snapshot);
+          } catch (error) {
+            metrics.log("safety_enrich_failed", { cycle: cycles, error: serializeError(error) });
+            await emitAlert({
+              severity: "warning",
+              title: "Token safety enrichment failed",
+              message: "The bot could not complete anti-scam enrichment for this snapshot.",
+              context: { cycle: cycles, error: serializeError(error), provider: config.provider },
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
         metrics.recordSnapshot(snapshot.capturedAt);
         state = { ...state, consecutiveFailures: 0, lastSnapshotAt: snapshot.capturedAt, lastBreakerReason: undefined };
       } catch (error) {
@@ -90,6 +115,17 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
         if (config.maxCycles && cycles >= config.maxCycles) break;
         await sleep(config.intervalMs);
         continue;
+      }
+
+      if (storage && config.enableRetryQueue && config.mode === "live") {
+        await processRetryQueue({
+          storage,
+          executor,
+          metrics,
+          alertSink,
+          retryBackoffMs,
+          cycle: cycles,
+        });
       }
 
       let cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined });
@@ -190,6 +226,9 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
           metrics.recordExecution(result);
           if (storage) await storage.saveExecution(result);
           metrics.log("execution", { signalId: signal.id, intentId: intent.id, status: result.status, reason: result.reason });
+          if (typeof signal.impermanentLossPct === "number" && signal.action !== "SWAP") {
+            metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (signal.impermanentLossPct / 100));
+          }
 
           if (result.status === "rejected" || result.status === "failed") {
             await emitAlert({
@@ -222,6 +261,12 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
             context: { signalId: signal.id, intentId: intent.id, error: serializeError(error) },
             createdAt: new Date().toISOString(),
           });
+
+          if (storage && config.enableRetryQueue && config.mode === "live") {
+            const retryJob = buildRetryJob(intent, serializeError(error), retryBackoffMs);
+            await storage.saveRetryJob(retryJob);
+            metrics.log("retry_queued", { jobId: retryJob.id, signalId: signal.id, attempts: retryJob.attempts, nextAttemptAt: retryJob.nextAttemptAt });
+          }
         }
       }
 
@@ -298,7 +343,93 @@ async function buildExecutor(config: ReturnType<typeof loadConfig>) {
   if (!config.rpcUrl || !signerSecretKey) {
     throw new Error("BOT_RPC_URL and BOT_SIGNER_SECRET_KEY or BOT_SIGNER_SECRET_KEY_FILE are required for live mode");
   }
-  return new JupiterSwapExecutionClient(config.rpcUrl, signerSecretKey, config.jupiterApiKey);
+  return new JupiterSwapExecutionClient(config.rpcUrl, signerSecretKey, config.jupiterApiKey, {
+    useJito: config.useJito,
+    jitoBlockEngineUrl: config.jitoBlockEngineUrl,
+    jitoTipLamports: config.jitoTipLamports,
+    jitoDontFrontTag: config.jitoDontFrontTag,
+    enableHoneypotSimulation: config.enableHoneypotSimulation,
+    maxHoneypotLossBps: config.maxHoneypotLossBps,
+  });
+}
+
+async function processRetryQueue(params: {
+  storage: BotStorage;
+  executor: Awaited<ReturnType<typeof buildExecutor>>;
+  metrics: BotMetrics;
+  alertSink: ReturnType<typeof createAlertSink>;
+  retryBackoffMs: number[];
+  cycle: number;
+}) {
+  const jobs = await params.storage.loadDueRetryJobs();
+  for (const job of jobs) {
+    try {
+      const result = await params.executor.execute(job.intent);
+      params.metrics.recordExecution(result);
+      await params.storage.saveExecution(result);
+      params.metrics.log("retry_executed", { jobId: job.id, intentId: job.intent.id, status: result.status });
+      if (result.status === "filled" || result.status === "simulated") {
+        await params.storage.markRetryJobDone(job.id);
+        continue;
+      }
+
+      const updated = bumpRetryJob(job, result.reason ? { message: result.reason } : { message: "non-filled retry result" }, params.retryBackoffMs);
+      if (updated.attempts >= updated.maxAttempts) {
+        await params.storage.markRetryJobDeadLetter(job.id, updated.lastError ?? "retry exhausted");
+        await params.alertSink.notify({
+          severity: "critical",
+          title: "Retry dead-lettered",
+          message: updated.lastError ?? "Retry queue exhausted",
+          context: { jobId: job.id, intentId: job.intent.id, status: result.status, cycle: params.cycle },
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        await params.storage.saveRetryJob(updated);
+      }
+    } catch (error) {
+      const updated = bumpRetryJob(job, serializeError(error), params.retryBackoffMs);
+      if (updated.attempts >= updated.maxAttempts) {
+        await params.storage.markRetryJobDeadLetter(job.id, updated.lastError ?? "retry exhausted");
+        await params.alertSink.notify({
+          severity: "critical",
+          title: "Retry dead-lettered",
+          message: updated.lastError ?? "Retry queue exhausted",
+          context: { jobId: job.id, intentId: job.intent.id, attempts: updated.attempts },
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        await params.storage.saveRetryJob(updated);
+      }
+    }
+  }
+}
+
+function buildRetryJob(intent: TradeIntent, error: ReturnType<typeof serializeError>, retryBackoffMs: number[]): RetryJob {
+  const createdAt = new Date().toISOString();
+  return {
+    id: `retry_${createHash("sha256").update(JSON.stringify({ intentId: intent.id, createdAt })).digest("hex").slice(0, 24)}`,
+    intent,
+    attempts: 1,
+    maxAttempts: Math.max(1, retryBackoffMs.length + 1),
+    nextAttemptAt: new Date(Date.now() + (retryBackoffMs[0] ?? 1_000)).toISOString(),
+    lastError: error.message,
+    createdAt,
+    updatedAt: createdAt,
+    status: "pending",
+  };
+}
+
+function bumpRetryJob(job: RetryJob, error: ReturnType<typeof serializeError>, retryBackoffMs: number[]): RetryJob {
+  const attempts = job.attempts + 1;
+  const backoffMs = retryBackoffMs[Math.min(attempts - 1, retryBackoffMs.length - 1)] ?? retryBackoffMs.at(-1) ?? 10_000;
+  return {
+    ...job,
+    attempts,
+    lastError: error.message,
+    nextAttemptAt: new Date(Date.now() + backoffMs).toISOString(),
+    updatedAt: new Date().toISOString(),
+    status: attempts >= job.maxAttempts ? "dead-letter" : "pending",
+  };
 }
 
 function sleep(ms: number) {

@@ -13,6 +13,8 @@ const policy = {
   maxPriceDislocationBps: 1_000,
   maxPoolAgeHours: 48,
   requireVerifiedPoolMetadata: false,
+  maxTopHolderSharePct: 80,
+  maxRugRiskScore: 70,
   poolAllowlist: [],
   poolDenylist: [],
   tokenAllowlist: [],

@@ -29,6 +29,7 @@ export class BotMetrics {
   executions = 0;
   failed = 0;
   simulatedPnlUsd = 0;
+  impermanentLossUsd = 0;
   private equityCurve: number[] = [0];
   private telemetry: Telemetry = {
     status: "idle",
@@ -101,6 +102,7 @@ export class BotMetrics {
       fills: this.fills,
       executions: this.executions,
       simulatedPnlUsd: round2(this.simulatedPnlUsd),
+      impermanentLossUsd: round2(this.impermanentLossUsd),
       winRate: this.fills > 0 ? round2((this.approved / Math.max(1, this.approved + this.rejected)) * 100) : 0,
       maxDrawdownUsd: round2(this.maxDrawdown()),
     };

@@ -16,6 +16,9 @@ export type PoolSnapshot = {
   mintAuthorityRevoked?: boolean;
   freezeAuthorityRevoked?: boolean;
   liquidityLocked?: boolean;
+  topHolderSharePct?: number;
+  rugRiskScore?: number;
+  tokenSafetyScore?: number;
   tvlUsd: number;
   volume24hUsd: number;
   fee24hUsd: number;
@@ -55,6 +58,7 @@ export type Signal = {
   suggestedCapitalUsd: number;
   slippageBps: number;
   priorityFeeMicroLamports: number;
+  impermanentLossPct?: number;
   createdAt: string;
 };
 
@@ -110,6 +114,8 @@ export type RiskPolicy = {
   poolDenylist: string[];
   tokenAllowlist: string[];
   tokenDenylist: string[];
+  maxTopHolderSharePct?: number;
+  maxRugRiskScore?: number;
 };
 
 export type RiskDecision = {
@@ -128,6 +134,19 @@ export type BacktestMetrics = {
   fills: number;
   executions: number;
   simulatedPnlUsd: number;
+  impermanentLossUsd: number;
   winRate: number;
   maxDrawdownUsd: number;
+};
+
+export type RetryJob = {
+  id: string;
+  intent: TradeIntent;
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "pending" | "dead-letter" | "done";
 };

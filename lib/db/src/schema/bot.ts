@@ -95,3 +95,21 @@ export const botRiskEventsTable = pgTable("bot_risk_events", {
   payload: jsonb("payload").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const botRetryJobsTable = pgTable("bot_retry_jobs", {
+  id: serial("id").primaryKey(),
+  retryId: text("retry_id").notNull(),
+  intentId: text("intent_id").notNull(),
+  signalId: text("signal_id").notNull(),
+  status: text("status").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lastError: text("last_error"),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  retryIdIdx: uniqueIndex("bot_retry_jobs_retry_id_idx").on(table.retryId),
+  pendingIdx: uniqueIndex("bot_retry_jobs_pending_idx").on(table.retryId, table.status),
+}));

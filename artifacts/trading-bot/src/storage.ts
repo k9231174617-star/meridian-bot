@@ -3,7 +3,7 @@ import path from "node:path";
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Alert } from "./alerts.js";
-import type { MarketSnapshot, Signal, TradeIntent, ExecutionResult, RiskDecision, StoredPosition } from "./domain.js";
+import type { MarketSnapshot, Signal, TradeIntent, ExecutionResult, RiskDecision, StoredPosition, RetryJob } from "./domain.js";
 import type { BotConfig } from "./config.js";
 
 export type BotStorage = {
@@ -21,6 +21,10 @@ export type BotStorage = {
   saveAlert(alert: Alert): Promise<void>;
   savePosition(position: StoredPosition): Promise<void>;
   loadPosition(poolAddress: string): Promise<StoredPosition | null>;
+  saveRetryJob(job: RetryJob): Promise<void>;
+  loadDueRetryJobs(now?: string): Promise<RetryJob[]>;
+  markRetryJobDone(jobId: string): Promise<void>;
+  markRetryJobDeadLetter(jobId: string, reason: string): Promise<void>;
 };
 
 type JsonLineRecord =
@@ -32,7 +36,8 @@ type JsonLineRecord =
   | { kind: "intent"; intent: TradeIntent }
   | { kind: "execution"; execution: ExecutionResult }
   | { kind: "alert"; alert: Alert }
-  | { kind: "position"; position: StoredPosition };
+  | { kind: "position"; position: StoredPosition }
+  | { kind: "retry_job"; job: RetryJob; reason?: string };
 
 type FileStorageState = {
   lastRunId: number;
@@ -40,10 +45,11 @@ type FileStorageState = {
 
 export async function createStorage(databaseUrl?: string, options?: { storageDir?: string }): Promise<BotStorage | null> {
   if (databaseUrl) {
-    const [{ Pool }, schema] = await Promise.all([
+    const [{ Pool }, schemaModule] = await Promise.all([
       import("pg"),
       import("../../../lib/db/src/schema/bot.js"),
     ]);
+    const schema = schemaModule as any;
     const pool = new Pool({ connectionString: databaseUrl });
     const db = drizzle(pool, { schema });
 
@@ -196,6 +202,54 @@ export async function createStorage(databaseUrl?: string, options?: { storageDir
         if (!row) return null;
         return row.payload as StoredPosition;
       },
+      async saveRetryJob(job) {
+        await db
+          .insert(schema.botRetryJobsTable)
+          .values({
+            retryId: job.id,
+            intentId: job.intent.id,
+            signalId: job.intent.signalId,
+            status: job.status,
+            attempts: job.attempts,
+            maxAttempts: job.maxAttempts,
+            nextAttemptAt: new Date(job.nextAttemptAt),
+            lastError: job.lastError,
+            payload: job,
+            createdAt: new Date(job.createdAt),
+            updatedAt: new Date(job.updatedAt),
+          })
+          .onConflictDoUpdate({
+            target: schema.botRetryJobsTable.retryId,
+            set: {
+              intentId: job.intent.id,
+              signalId: job.intent.signalId,
+              status: job.status,
+              attempts: job.attempts,
+              maxAttempts: job.maxAttempts,
+              nextAttemptAt: new Date(job.nextAttemptAt),
+              lastError: job.lastError,
+              payload: job,
+              updatedAt: new Date(job.updatedAt),
+            },
+          });
+      },
+      async loadDueRetryJobs(now = new Date().toISOString()) {
+        const rows = await db
+          .select()
+          .from(schema.botRetryJobsTable)
+          .where(eq(schema.botRetryJobsTable.status, "pending"))
+          .orderBy(desc(schema.botRetryJobsTable.nextAttemptAt))
+          .limit(100);
+        return rows
+          .filter((row) => row.nextAttemptAt <= new Date(now))
+          .map((row) => row.payload as RetryJob);
+      },
+      async markRetryJobDone(jobId) {
+        await db.update(schema.botRetryJobsTable).set({ status: "done", updatedAt: new Date() }).where(eq(schema.botRetryJobsTable.retryId, jobId));
+      },
+      async markRetryJobDeadLetter(jobId, reason) {
+        await db.update(schema.botRetryJobsTable).set({ status: "dead-letter", lastError: reason, updatedAt: new Date() }).where(eq(schema.botRetryJobsTable.retryId, jobId));
+      },
     };
   }
 
@@ -331,6 +385,47 @@ class FileBotStorage implements BotStorage {
         }
       }
       return null;
+    });
+  }
+
+  async saveRetryJob(job: RetryJob): Promise<void> {
+    return this.enqueue(async () => {
+      await this.append("retry-jobs.jsonl", { kind: "retry_job", job } satisfies JsonLineRecord);
+    });
+  }
+
+  async loadDueRetryJobs(now = new Date().toISOString()): Promise<RetryJob[]> {
+    return this.enqueue(async () => {
+      const records = await this.readRecords("retry-jobs.jsonl");
+      const jobs = new Map<string, RetryJob>();
+      for (const record of records) {
+        if (record.kind !== "retry_job") continue;
+        jobs.set(record.job.id, record.job);
+      }
+      return [...jobs.values()].filter((job) => job.status === "pending" && new Date(job.nextAttemptAt).getTime() <= new Date(now).getTime());
+    });
+  }
+
+  async markRetryJobDone(jobId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const existing = await this.findRecord("retry-jobs.jsonl", (entry) => entry.kind === "retry_job" && entry.job.id === jobId);
+      if (!existing || existing.kind !== "retry_job") return;
+      await this.append("retry-jobs.jsonl", {
+        kind: "retry_job",
+        job: { ...existing.job, status: "done", updatedAt: new Date().toISOString() },
+      } satisfies JsonLineRecord);
+    });
+  }
+
+  async markRetryJobDeadLetter(jobId: string, reason: string): Promise<void> {
+    return this.enqueue(async () => {
+      const existing = await this.findRecord("retry-jobs.jsonl", (entry) => entry.kind === "retry_job" && entry.job.id === jobId);
+      if (!existing || existing.kind !== "retry_job") return;
+      await this.append("retry-jobs.jsonl", {
+        kind: "retry_job",
+        job: { ...existing.job, status: "dead-letter", lastError: reason, updatedAt: new Date().toISOString() },
+        reason,
+      } satisfies JsonLineRecord);
     });
   }
 

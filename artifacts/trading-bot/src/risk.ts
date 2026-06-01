@@ -69,6 +69,20 @@ export class RiskEngine {
       }
     }
 
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.topHolderSharePct === "number" && pool.topHolderSharePct > policy.maxTopHolderSharePct) {
+      return this.reject(
+        `Top holder concentration ${pool.topHolderSharePct.toFixed(2)}% above policy limit ${policy.maxTopHolderSharePct.toFixed(2)}%`,
+        false,
+      );
+    }
+
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.rugRiskScore === "number" && pool.rugRiskScore > policy.maxRugRiskScore) {
+      return this.reject(
+        `Token rug risk ${pool.rugRiskScore.toFixed(0)} above policy limit ${policy.maxRugRiskScore.toFixed(0)}`,
+        false,
+      );
+    }
+
     const dislocationBps = computePriceDislocationBps(pool, snapshot);
     if (!bypassPaperFilters && !isRiskExit && dislocationBps > policy.maxPriceDislocationBps) {
       return this.reject(
@@ -153,6 +167,8 @@ export class RiskEngine {
       minSignalConfidence: policy.minSignalConfidence ?? 0,
       maxConcurrentIntents: policy.maxConcurrentIntents ?? 1,
       maxPriceDislocationBps: policy.maxPriceDislocationBps ?? Number.POSITIVE_INFINITY,
+      maxTopHolderSharePct: policy.maxTopHolderSharePct ?? 80,
+      maxRugRiskScore: policy.maxRugRiskScore ?? 70,
       maxPoolAgeHours: policy.maxPoolAgeHours,
       requireVerifiedPoolMetadata: policy.requireVerifiedPoolMetadata ?? false,
       poolAllowlist: policy.poolAllowlist ?? [],
@@ -211,6 +227,7 @@ export class RiskEngine {
       mintAuthorityRevoked?: boolean;
       freezeAuthorityRevoked?: boolean;
       liquidityLocked?: boolean;
+      tokenSafetyScore?: number;
     },
     policy: HardenedRiskPolicy,
   ): string | undefined {
@@ -224,6 +241,7 @@ export class RiskEngine {
     if (pool.mintAuthorityRevoked === false) return "Pool mint authority has not been revoked";
     if (pool.freezeAuthorityRevoked === false) return "Pool freeze authority has not been revoked";
     if (pool.liquidityLocked === false) return "Pool liquidity is not locked";
+    if (typeof pool.tokenSafetyScore === "number" && pool.tokenSafetyScore < 30) return "Pool token safety score is too low";
 
     return undefined;
   }

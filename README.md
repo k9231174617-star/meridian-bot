@@ -79,6 +79,18 @@ an explicit remote API endpoint.
 - Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
   flows, and it persists tracked LP positions in `bot_positions` when a database
   is available.
+- Live swaps now support optional Jito bundle submission via `BOT_USE_JITO=true`
+  with a built-in `jitodontfront` memo protection tag, pre-send honeypot
+  round-trip quote checks, and a Jito tip configuration.
+- Anti-scam enrichment can pull token safety metadata from RPC and optional
+  Rugcheck-like endpoints, then gate risky pools by top-holder concentration,
+  mint/freezer authority state, and risk score.
+- Failed live executions can be queued into a retry/DLQ flow with bounded
+  backoff (`BOT_RETRY_BACKOFF_MS`) and a dead-letter path when retries are
+  exhausted.
+- `Signal` objects now carry an impermanent-loss estimate derived from the
+  standard `2*sqrt(r)/(1+r)-1` formula so the dashboard and logs can reflect a
+  more accurate LP risk estimate.
 - The API now exposes `/api/bot/status` from the shared bot storage directory,
   so the dashboard can show the latest run, status, and recent alerts.
 - The dashboard also includes a Paper Trading control that calls

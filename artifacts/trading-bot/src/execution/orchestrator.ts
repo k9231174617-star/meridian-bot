@@ -53,10 +53,15 @@ export class ExecutionOrchestrator {
         lastError = error as Error;
         if (error instanceof ExecutionError) {
           if ([
+            ExecutionErrorCode.SIMULATION_FAILED,
             ExecutionErrorCode.INVALID_TICK_RANGE,
             ExecutionErrorCode.PROTOCOL_NOT_SUPPORTED,
             ExecutionErrorCode.WALLET_NOT_CONNECTED,
             ExecutionErrorCode.MATH_OVERFLOW,
+            ExecutionErrorCode.SLIPPAGE_EXCEEDED,
+            ExecutionErrorCode.POOL_NOT_FOUND,
+            ExecutionErrorCode.POSITION_NOT_FOUND,
+            ExecutionErrorCode.ATA_NOT_FOUND,
           ].includes(error.code)) {
             throw error;
           }
@@ -101,8 +106,41 @@ export class ExecutionOrchestrator {
       cmd.priorityFeeMicrolamports,
     );
     const quote = await this.jupiter.getQuote(cmd.inputMint, cmd.outputMint, cmd.amountIn, cmd.slippageBps);
-    const result = await this.jupiter.swap(quote, priorityFee, cmd.computeUnits, this.simulate);
+    const honeypot = cmd.simulateHoneypot !== false;
+    if (honeypot) {
+      await this.assertRoundTripIsViable(cmd, quote, cmd.maxHoneypotLossBps ?? 150);
+    }
+    const result = cmd.useJito
+      ? await this.jupiter.swap(
+        quote,
+        priorityFee,
+        cmd.computeUnits,
+        this.simulate,
+        {
+          useJito: true,
+          jitoBlockEngineUrl: cmd.jitoBlockEngineUrl,
+          jitoTipLamports: cmd.jitoTipLamports,
+          jitoDontFrontTag: cmd.jitoDontFrontTag,
+        },
+      )
+      : await this.jupiter.swap(quote, priorityFee, cmd.computeUnits, this.simulate);
     return { success: true, signature: result.signature, feePaid: result.fee ?? undefined, amountOut: result.outAmount, priceImpactBps: Math.round(quote.priceImpactPct * 100) };
+  }
+
+  private async assertRoundTripIsViable(cmd: ExecutionCommand, quote: Awaited<ReturnType<JupiterClient["getQuote"]>>, maxLossBps: number) {
+    const reverseAmount = Math.max(1, Math.floor(quote.outAmount));
+    const reverseQuote = await this.jupiter.getQuote(cmd.outputMint!, cmd.inputMint!, reverseAmount, cmd.slippageBps, true);
+    const roundTripBps = quote.inAmount > 0
+      ? Math.round((1 - (reverseQuote.outAmount / quote.inAmount)) * 10_000)
+      : 10_000;
+    if (!Number.isFinite(roundTripBps) || roundTripBps > maxLossBps) {
+      throw simulation_failed([
+        `roundTripLossBps=${roundTripBps}`,
+        `maxLossBps=${maxLossBps}`,
+        `input=${quote.inAmount}`,
+        `output=${quote.outAmount}`,
+      ], new Error(`Potential honeypot or excessive round-trip loss: ${roundTripBps} bps`));
+    }
   }
 
   private async executeOpenPosition(cmd: ExecutionCommand): Promise<ExecutionResult> {

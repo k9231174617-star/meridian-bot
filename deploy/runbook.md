@@ -17,6 +17,15 @@
 - `BOT_ALERT_WEBHOOK_URL`
 - `BOT_STORAGE_DIR`
 - `BOT_BACKTEST_SNAPSHOTS_FILE`
+- `BOT_USE_JITO=true` for Jito-backed live swaps on mainnet
+- `BOT_JITO_BLOCK_ENGINE_URL`
+- `BOT_JITO_TIP_LAMPORTS`
+- `BOT_ENABLE_HONEYPOT_SIMULATION=true`
+- `BOT_ENABLE_ANTI_SCAM=true`
+- `BOT_RUGCHECK_API_URL`
+- `BOT_RUGCHECK_API_KEY`
+- `BOT_ENABLE_RETRY_QUEUE=true`
+- `BOT_RETRY_BACKOFF_MS`
 - dashboard `Paper Trading` control via `/api/bot/paper-trade`
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
@@ -55,6 +64,7 @@ sudo systemctl enable --now trading-bot
 - `pnpm bot:backtest` or `pnpm bot:backtest -- --snapshots <file>`
 - `pnpm bot:paper:trade -- --cycles 5` before every live change
 - keep `BOT_PAPER_DEBUG_FORCE_SIGNAL=true` and `BOT_PAPER_DEBUG_BYPASS_RISK=true` for test-only sessions
+- verify Jito / honeypot / anti-scam flags are green before a live pilot
 - `pnpm bot:live` only in a tiny-capital pilot after paper verification and manual approval
 
 ## Pilot checklist

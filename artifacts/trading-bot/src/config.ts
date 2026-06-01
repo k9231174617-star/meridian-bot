@@ -7,6 +7,8 @@ export type HardenedRiskPolicy = RiskPolicy & {
   circuitBreakerFailureLimit: number;
   circuitBreakerCooldownMs: number;
   requireVerifiedPoolMetadata: boolean;
+  maxTopHolderSharePct: number;
+  maxRugRiskScore: number;
 };
 
 const configSchema = z.object({
@@ -27,8 +29,22 @@ const configSchema = z.object({
   BOT_MAX_POOL_AGE_HOURS: optionalPositiveInteger(),
   BOT_MAX_PRICE_DISLOCATION_BPS: z.coerce.number().int().positive().max(100_000).default(750),
   BOT_MARKET_DATA_MAX_AGE_MS: z.coerce.number().int().positive().default(120_000),
+  BOT_MAX_TOP_HOLDER_SHARE_PCT: z.coerce.number().min(0).max(100).default(80),
+  BOT_MAX_RUG_RISK_SCORE: z.coerce.number().int().min(0).max(100).default(70),
   BOT_CIRCUIT_BREAKER_FAILURES: z.coerce.number().int().positive().default(3),
   BOT_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(15 * 60_000),
+  BOT_USE_JITO: booleanFromEnv().default(false),
+  BOT_JITO_BLOCK_ENGINE_URL: z.string().default("https://mainnet.block-engine.jito.wtf/api/v1"),
+  BOT_JITO_TIP_LAMPORTS: z.coerce.number().int().nonnegative().default(1_000),
+  BOT_JITO_DONT_FRONT_TAG: z.string().default("jitodontfront111111111111111111111111111111"),
+  BOT_ENABLE_HONEYPOT_SIMULATION: booleanFromEnv().default(true),
+  BOT_MAX_HONEYPOT_LOSS_BPS: z.coerce.number().int().positive().max(10_000).default(150),
+  BOT_ENABLE_ANTI_SCAM: booleanFromEnv().default(true),
+  BOT_RUGCHECK_API_URL: z.string().optional(),
+  BOT_RUGCHECK_API_KEY: z.string().optional(),
+  BOT_ENABLE_RETRY_QUEUE: booleanFromEnv().default(true),
+  BOT_RETRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  BOT_RETRY_BACKOFF_MS: z.string().default("1000,3000,10000"),
   BOT_PAPER_DEBUG_FORCE_SIGNAL: booleanFromEnv().default(false),
   BOT_PAPER_DEBUG_BYPASS_RISK: booleanFromEnv().default(false),
   BOT_REQUIRE_VERIFIED_POOL_METADATA: booleanFromEnv().default(false),
@@ -78,6 +94,18 @@ export type BotConfig = {
   paperMaxCycles?: number;
   paperDebugForceSignal: boolean;
   paperDebugBypassRisk: boolean;
+  useJito: boolean;
+  jitoBlockEngineUrl: string;
+  jitoTipLamports: number;
+  jitoDontFrontTag: string;
+  enableHoneypotSimulation: boolean;
+  maxHoneypotLossBps: number;
+  enableAntiScam: boolean;
+  rugcheckApiUrl?: string;
+  rugcheckApiKey?: string;
+  enableRetryQueue: boolean;
+  retryMaxAttempts: number;
+  retryBackoffMs: number[];
   risk: HardenedRiskPolicy;
   rpcUrl?: string;
   signerSecretKey?: string;
@@ -109,6 +137,8 @@ export function loadConfig(env = process.env): BotConfig {
     maxConcurrentIntents: parsed.BOT_MAX_CONCURRENT_INTENTS,
     maxPoolAgeHours: parsed.BOT_MAX_POOL_AGE_HOURS,
     maxPriceDislocationBps: parsed.BOT_MAX_PRICE_DISLOCATION_BPS,
+    maxTopHolderSharePct: parsed.BOT_MAX_TOP_HOLDER_SHARE_PCT,
+    maxRugRiskScore: parsed.BOT_MAX_RUG_RISK_SCORE,
     poolAllowlist: allowedPools,
     poolDenylist: deniedPools,
     tokenAllowlist: allowedTokens,
@@ -128,6 +158,20 @@ export function loadConfig(env = process.env): BotConfig {
     paperMaxCycles: parsed.BOT_PAPER_MAX_CYCLES,
     paperDebugForceSignal: parsed.BOT_PAPER_DEBUG_FORCE_SIGNAL,
     paperDebugBypassRisk: parsed.BOT_PAPER_DEBUG_BYPASS_RISK,
+    useJito: parsed.BOT_USE_JITO,
+    jitoBlockEngineUrl: parsed.BOT_JITO_BLOCK_ENGINE_URL,
+    jitoTipLamports: parsed.BOT_JITO_TIP_LAMPORTS,
+    jitoDontFrontTag: parsed.BOT_JITO_DONT_FRONT_TAG,
+    enableHoneypotSimulation: parsed.BOT_ENABLE_HONEYPOT_SIMULATION,
+    maxHoneypotLossBps: parsed.BOT_MAX_HONEYPOT_LOSS_BPS,
+    enableAntiScam: parsed.BOT_ENABLE_ANTI_SCAM,
+    rugcheckApiUrl: parsed.BOT_RUGCHECK_API_URL,
+    rugcheckApiKey: parsed.BOT_RUGCHECK_API_KEY,
+    enableRetryQueue: parsed.BOT_ENABLE_RETRY_QUEUE,
+    retryMaxAttempts: parsed.BOT_RETRY_MAX_ATTEMPTS,
+    retryBackoffMs: parseCsvList(parsed.BOT_RETRY_BACKOFF_MS)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0),
     rpcUrl: parsed.BOT_RPC_URL,
     signerSecretKey: parsed.BOT_SIGNER_SECRET_KEY,
     signerSecretKeyFile: parsed.BOT_SIGNER_SECRET_KEY_FILE,

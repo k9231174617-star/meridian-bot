@@ -1,5 +1,5 @@
 import BN from "bn.js";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import type { ExecutionResult, TradeIntent } from "./domain.js";
 import {
   ExecutionOrchestrator,
@@ -52,11 +52,20 @@ export class DryRunExecutionClient implements ExecutionClient {
 
 export class JupiterSwapExecutionClient implements ExecutionClient {
   private orchestrator: ExecutionOrchestrator | null = null;
+  private readonly jitoTipAccountCache = new Map<string, PublicKey>();
 
   constructor(
     private readonly rpcUrl: string,
     private readonly secretKey: string,
     private readonly jupiterApiKey?: string,
+    private readonly options: {
+      useJito?: boolean;
+      jitoBlockEngineUrl?: string;
+      jitoTipLamports?: number;
+      jitoDontFrontTag?: string;
+      enableHoneypotSimulation?: boolean;
+      maxHoneypotLossBps?: number;
+    } = {},
   ) {}
 
   async execute(intent: TradeIntent): Promise<ExecutionResult> {
@@ -74,7 +83,15 @@ export class JupiterSwapExecutionClient implements ExecutionClient {
   private async executeSwap(intent: TradeIntent): Promise<ExecutionResult> {
     const orchestrator = await this.getOrchestrator();
     const command = buildSwapCommand(intent, loadKeypair(this.secretKey).publicKey);
-    const result = await orchestrator.execute(command);
+    const result = await orchestrator.execute({
+      ...command,
+      simulateHoneypot: this.options.enableHoneypotSimulation ?? true,
+      maxHoneypotLossBps: this.options.maxHoneypotLossBps ?? 150,
+      useJito: this.options.useJito ?? false,
+      jitoBlockEngineUrl: this.options.jitoBlockEngineUrl,
+      jitoTipLamports: this.options.jitoTipLamports,
+      jitoDontFrontTag: this.options.jitoDontFrontTag,
+    });
 
     return mapOrchestratorResult(intent, result, intent.amountUsd, "Live Jupiter swap submitted");
   }

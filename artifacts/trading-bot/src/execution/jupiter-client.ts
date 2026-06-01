@@ -1,4 +1,5 @@
-import { Connection, Keypair, PublicKey, VersionedTransaction } from '@solana/web3.js';
+import { createHash } from 'node:crypto';
+import { Connection, Keypair, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { ExecutionError, ExecutionErrorCode, simulation_failed } from './errors.js';
 
 const JUPITER_API_BASE = 'https://quote-api.jup.ag/v6';
@@ -26,6 +27,7 @@ export type JupiterSwapResult = {
 export class JupiterClient {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly jitoTipAccountCache = new Map<string, PublicKey>();
 
   constructor(
     private readonly rpc: Connection,
@@ -99,6 +101,12 @@ export class JupiterClient {
     priorityFeeMicrolamports = 10_000,
     computeUnitLimit = 400_000,
     simulateFirst = true,
+    options?: {
+      useJito?: boolean;
+      jitoBlockEngineUrl?: string;
+      jitoTipLamports?: number;
+      jitoDontFrontTag?: string;
+    },
   ): Promise<JupiterSwapResult> {
     const body = {
       quoteResponse: quote.raw,
@@ -127,6 +135,7 @@ export class JupiterClient {
     }
 
     const tx = VersionedTransaction.deserialize(Buffer.from(payload.swapTransaction, 'base64'));
+    tx.sign([this.keypair]);
 
     if (simulateFirst) {
       const sim = await this.rpc.simulateTransaction(tx);
@@ -135,11 +144,12 @@ export class JupiterClient {
       }
     }
 
-    tx.sign([this.keypair]);
-    const signature = await this.rpc.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      maxRetries: 0,
-    });
+    const signature = options?.useJito
+      ? await this.sendViaJito(tx, options)
+      : await this.rpc.sendRawTransaction(tx.serialize(), {
+        skipPreflight: false,
+        maxRetries: 0,
+      });
 
     await this.confirm(signature);
 
@@ -191,6 +201,130 @@ export class JupiterClient {
   async close() {
     return undefined;
   }
+
+  private async sendViaJito(tx: VersionedTransaction, options?: { jitoBlockEngineUrl?: string; jitoTipLamports?: number; jitoDontFrontTag?: string; }) {
+    const blockEngineUrl = options?.jitoBlockEngineUrl ?? 'https://mainnet.block-engine.jito.wtf/api/v1';
+    const tipLamports = Math.max(1_000, options?.jitoTipLamports ?? 1_000);
+    const dontFrontTag = options?.jitoDontFrontTag ?? 'jitodontfront';
+    const blockhash = tx.message.recentBlockhash;
+    const tipAccount = await this.getTipAccount(blockEngineUrl);
+    const protectTx = this.buildProtectTransaction(blockhash, dontFrontTag);
+    const tipTx = this.buildTipTransaction(blockhash, tipAccount, tipLamports);
+    const bundle = [protectTx, tx, tipTx].map((item) => Buffer.from(item.serialize()).toString('base64'));
+
+    const response = await fetch(`${blockEngineUrl}/bundles`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'sendBundle',
+        params: [bundle, { encoding: 'base64' }],
+      }),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+
+    if (!response.ok) {
+      throw new ExecutionError(ExecutionErrorCode.JUPITER_API, `Jito bundle HTTP ${response.status}: ${await response.text()}`);
+    }
+
+    const payload = (await response.json()) as { result?: string; error?: unknown };
+    if (payload.error) {
+      throw new ExecutionError(ExecutionErrorCode.JUPITER_API, `Jito bundle rejected: ${JSON.stringify(payload.error)}`);
+    }
+
+    return tx.signatures[0] ? base58Encode(tx.signatures[0]) : String(payload.result ?? '');
+  }
+
+  private async getTipAccount(blockEngineUrl: string) {
+    const cached = this.jitoTipAccountCache.get(blockEngineUrl);
+    if (cached) return cached;
+
+    let response = await fetch(`${blockEngineUrl}/getTipAccounts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getTipAccounts', params: [] }),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+
+    if (!response.ok) {
+      response = await fetch(`${blockEngineUrl}/getTipAccounts`, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (!response.ok) {
+        throw new ExecutionError(ExecutionErrorCode.JUPITER_API, `Jito tip account lookup failed: ${response.status}`);
+      }
+    }
+
+    const payload = (await response.json()) as { result?: string[] };
+    const account = payload.result?.[0];
+    if (!account) {
+      throw new ExecutionError(ExecutionErrorCode.JUPITER_API, 'Jito tip account lookup returned no accounts');
+    }
+
+    const pubkey = new PublicKey(account);
+    this.jitoTipAccountCache.set(blockEngineUrl, pubkey);
+    return pubkey;
+  }
+
+  private buildProtectTransaction(blockhash: string, dontFrontTag: string) {
+    const dontFrontAccount = publicKeyFromSeed(dontFrontTag);
+    const memoInstruction = new TransactionInstruction({
+      programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
+      keys: [{ pubkey: dontFrontAccount, isSigner: false, isWritable: false }],
+      data: Buffer.from('jitodontfront'),
+    });
+    const message = new TransactionMessage({
+      payerKey: this.keypair.publicKey,
+      recentBlockhash: blockhash,
+      instructions: [memoInstruction],
+    }).compileToV0Message();
+    const tx = new VersionedTransaction(message);
+    tx.sign([this.keypair]);
+    return tx;
+  }
+
+  private buildTipTransaction(blockhash: string, tipAccount: PublicKey, tipLamports: number) {
+    const instruction = SystemProgram.transfer({
+      fromPubkey: this.keypair.publicKey,
+      toPubkey: tipAccount,
+      lamports: tipLamports,
+    });
+    const message = new TransactionMessage({
+      payerKey: this.keypair.publicKey,
+      recentBlockhash: blockhash,
+      instructions: [instruction],
+    }).compileToV0Message();
+    const tx = new VersionedTransaction(message);
+    tx.sign([this.keypair]);
+    return tx;
+  }
+}
+
+function publicKeyFromSeed(seed: string) {
+  const hash = createHash('sha256').update(seed).digest();
+  return new PublicKey(hash.subarray(0, 32));
+}
+
+function base58Encode(bytes: Uint8Array) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let x = BigInt(`0x${Buffer.from(bytes).toString("hex")}`);
+  if (x === 0n) return "1";
+
+  let output = "";
+  while (x > 0n) {
+    const mod = Number(x % 58n);
+    output = alphabet[mod] + output;
+    x /= 58n;
+  }
+
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    output = alphabet[0] + output;
+  }
+
+  return output;
 }
 
 function sleep(ms: number) {
