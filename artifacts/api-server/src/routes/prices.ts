@@ -11,6 +11,10 @@ const router = Router();
 
 const pricesCache = new Map<string, { data: unknown; ts: number }>();
 const CACHE_TTL = 15_000;
+const PRICE_ENDPOINTS = [
+  "https://lite-api.jup.ag/price/v3",
+  "https://api.jup.ag/price/v2",
+];
 
 router.get("/", async (req, res) => {
   try {
@@ -27,15 +31,8 @@ router.get("/", async (req, res) => {
 
     const tokenList = normalizePriceTokens(query.tokens ?? DEFAULT_PRICE_TOKENS.join(","));
     const ids = tokenList.map((t: string) => TOKEN_MINTS[t] || t).join(",");
-
-    const url = `https://api.jup.ag/price/v2?ids=${ids}`;
-    const r = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    const raw = (await r.json()) as { data: Record<string, { price: string; change24h?: string }> };
-    const result = buildPriceResponse(tokenList, raw.data ?? {});
+    const raw = await fetchPriceMap(ids);
+    const result = buildPriceResponse(tokenList, raw);
 
     pricesCache.set(cacheKey, { data: result, ts: now });
     return res.json(result);
@@ -49,4 +46,33 @@ export default router;
 
 function tokenListKey(tokens?: string) {
   return normalizePriceTokens(tokens ?? DEFAULT_PRICE_TOKENS.join(",")).join(",");
+}
+
+async function fetchPriceMap(ids: string) {
+  let lastError: unknown;
+
+  for (const endpoint of PRICE_ENDPOINTS) {
+    try {
+      const response = await fetch(`${endpoint}?ids=${ids}`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!response.ok) {
+        lastError = new Error(`${endpoint} returned ${response.status}`);
+        continue;
+      }
+
+      const raw = (await response.json()) as Record<string, unknown> | { data?: Record<string, unknown> };
+      if (raw && "data" in raw && raw.data) return raw.data;
+      return raw as Record<string, unknown>;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    console.warn("Falling back to empty price map after Jupiter price API failures", lastError);
+  }
+
+  return {} as Record<string, unknown>;
 }

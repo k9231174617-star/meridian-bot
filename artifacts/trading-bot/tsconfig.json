@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"],
+    "moduleResolution": "node16",
+    "module": "Node16"
+  },
+  "include": ["src"],
+  "references": [
+    {
+      "path": "../../lib/db"
+    }
+  ]
+}

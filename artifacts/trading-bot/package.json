@@ -1,0 +1,30 @@
+{
+  "name": "@workspace/trading-bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx ./src/cli.ts run",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps ./dist/cli.js run",
+    "paper": "node --enable-source-maps ./dist/cli.js paper",
+    "live": "node --enable-source-maps ./dist/cli.js run --mode live",
+    "backtest": "node --enable-source-maps ./dist/cli.js backtest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test ./src/*.test.ts ./src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.9.10",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.2",
+    "@workspace/db": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/bn.js": "^5.1.6",
+    "tsx": "catalog:",
+    "typescript": "~5.9.2"
+  }
+}

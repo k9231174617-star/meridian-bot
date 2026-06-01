@@ -4,10 +4,18 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    ".": {
+      "workspace": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "workspace": "./src/schema/index.ts",
+      "default": "./dist/schema/index.js"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
   },

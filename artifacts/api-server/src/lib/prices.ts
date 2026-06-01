@@ -16,6 +16,12 @@ export type JupiterPriceRecord = {
   price_change_24h?: string | number;
   percentChange24h?: string | number;
   percent_change_24h?: string | number;
+  usdPrice?: string | number;
+  priceChange24h?: string | number;
+  createdAt?: string;
+  blockId?: number;
+  decimals?: number;
+  liquidity?: number;
 };
 
 export function normalizePriceTokens(tokens?: string): string[] {
@@ -29,7 +35,7 @@ export function normalizePriceTokens(tokens?: string): string[] {
 
 export function buildPriceResponse(
   tokenList: string[],
-  raw: Record<string, JupiterPriceRecord>,
+  raw: Record<string, any>,
 ): PricesResponse {
   return {
     prices: Object.fromEntries(
@@ -40,14 +46,8 @@ export function buildPriceResponse(
           token,
           {
             symbol: token,
-            price: toNumber(entry?.price),
-            change24h:
-              toNumber(
-                entry?.change24h ??
-                  entry?.percentChange24h ??
-                  entry?.percent_change_24h ??
-                  entry?.price_change_24h,
-              ) || 0,
+            price: toPriceNumber(entry),
+            change24h: toChangeNumber(entry),
           },
         ] as const;
       }),
@@ -59,4 +59,20 @@ export function buildPriceResponse(
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toPriceNumber(entry: JupiterPriceRecord | undefined) {
+  return toNumber(entry?.usdPrice ?? entry?.price);
+}
+
+function toChangeNumber(entry: JupiterPriceRecord | undefined) {
+  return (
+    toNumber(
+      entry?.priceChange24h ??
+        entry?.change24h ??
+        entry?.percentChange24h ??
+        entry?.percent_change_24h ??
+        entry?.price_change_24h,
+    ) || 0
+  );
 }

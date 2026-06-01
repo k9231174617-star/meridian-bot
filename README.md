@@ -39,6 +39,10 @@ an explicit remote API endpoint.
 - `pnpm dev` - run frontend and API packages in parallel
 - `pnpm dev:api` - run only the API package
 - `pnpm dev:web` - run only the frontend package
+- `pnpm bot:dev` - run the trading bot in paper mode from source
+- `pnpm bot:paper` - run the compiled bot in paper mode
+- `pnpm bot:live` - run the compiled bot in live mode
+- `pnpm bot:backtest` - run the built-in backtest against live snapshot samples
 - `pnpm start` - start the API server in production mode and serve the built frontend
 - `pnpm build` - typecheck and build all packages
 - `pnpm test` - run the backend test suite
@@ -56,3 +60,17 @@ an explicit remote API endpoint.
 - The API server now serves `artifacts/meridian/dist/public` when that build is
   present, so `pnpm start` works as a deploy entrypoint after `pnpm build`.
 - `pnpm smoke` verifies the production API and static frontend path after a build.
+- The bot package currently runs in paper, dry-run, or live mode. Live mode
+  requires `BOT_RPC_URL` and either `BOT_SIGNER_SECRET_KEY` or
+  `BOT_SIGNER_SECRET_KEY_FILE`. A remote secret endpoint can also be used via
+  `BOT_SIGNER_SECRET_REMOTE_URL` and `BOT_SIGNER_SECRET_REMOTE_TOKEN` when the
+  signer is backed by Vault or another secret service. Optional
+  `BOT_ALERT_WEBHOOK_URL` enables external alerts for failures and
+  circuit-breaker events. The bot also supports pool and token allow/deny lists,
+  a pool-age gate, optional pool-metadata verification, a price-dislocation
+  guardrail, and a local JSONL storage fallback via `BOT_STORAGE_DIR` when no
+  database URL is configured.
+- Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
+  flows, and it persists tracked LP positions in `bot_positions` when a database
+  is available.
+- Deployment manifests and runbook notes live under `deploy/`.
