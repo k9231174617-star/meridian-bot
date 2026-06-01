@@ -1,10 +1,13 @@
 import { Connection } from "@solana/web3.js";
+import type { SupportedDex } from "./domain.js";
+import { detectDexFromLogs } from "./dex-discovery.js";
 
 export type PoolWatchEvent = {
   signature: string;
   detectedAt: string;
   keywords: string[];
   logs: string[];
+  dexes: SupportedDex[];
   source: "wss";
 };
 
@@ -43,6 +46,7 @@ export class PoolWatcher {
       const logs = (logInfo.logs ?? []).map(String);
       const keywords = matchKeywords(logs, this.keywords);
       if (keywords.length === 0) return;
+      const dexes = detectDexFromLogs(logs);
 
       this.seenSignatures.add(logInfo.signature);
       this.seenOrder.push(logInfo.signature);
@@ -56,6 +60,7 @@ export class PoolWatcher {
         detectedAt: new Date().toISOString(),
         keywords,
         logs,
+        dexes,
         source: "wss",
       });
     }, "confirmed");

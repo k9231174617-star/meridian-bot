@@ -24,8 +24,9 @@ import {
 import "./dashboard.css";
 
 type Page = "signals" | "positions" | "analytics" | "wallet" | "settings";
-type Chip = "all" | "hot" | "meteora" | "smart" | "organic";
+type Chip = "all" | "hot" | "meteora" | "raydium" | "orca" | "smart" | "organic";
 type Language = "en" | "ru";
+type SupportedDex = "meteora" | "raydium" | "orca";
 
 type WalletRow = {
   symbol: string;
@@ -81,6 +82,37 @@ type PaperTradeStatus = {
     };
   };
   error?: string;
+};
+
+type DiscoveryStatus = {
+  settings: {
+    enabledDexes: SupportedDex[];
+    updatedAt: string;
+  };
+  candidates: Array<{
+    id: string;
+    dex: SupportedDex;
+    source: "meteora-api" | "wss-log" | "fallback";
+    signature?: string;
+    detectedAt: string;
+    confidence: number;
+    keywords: string[];
+    pool: Pool;
+  }>;
+  totals: {
+    candidates: number;
+    meteora: number;
+    raydium: number;
+    orca: number;
+  };
+};
+
+type UiPool = Pool & {
+  dex?: SupportedDex;
+  discoveryConfidence?: number;
+  discoverySource?: "meteora-api" | "wss-log" | "fallback";
+  discoverySignature?: string;
+  isDiscoveryCandidate?: boolean;
 };
 
 const STRINGS: Record<Language, StringMap> = {
@@ -458,6 +490,32 @@ async function fetchPaperTradeStatus(): Promise<PaperTradeStatus> {
   return (await response.json()) as PaperTradeStatus;
 }
 
+async function fetchDiscoveryStatus(): Promise<DiscoveryStatus> {
+  const response = await fetch("/api/bot/discovery", { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`Discovery status request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as DiscoveryStatus;
+}
+
+async function saveDiscoverySettings(enabledDexes: SupportedDex[]): Promise<DiscoveryStatus> {
+  const response = await fetch("/api/bot/discovery", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({ enabledDexes }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error ?? `Discovery settings request failed: ${response.status}`);
+  }
+
+  return payload as DiscoveryStatus;
+}
+
 async function stopPaperTrade(): Promise<PaperTradeStatus> {
   const response = await fetch("/api/bot/paper-trade/stop", {
     method: "POST",
@@ -499,6 +557,7 @@ function App() {
   const [paperTradeDebugBypassRisk, setPaperTradeDebugBypassRisk] = useState(() =>
     readBool("paper_trade_debug_bypass_risk", true),
   );
+  const [enabledDexes, setEnabledDexes] = useState<SupportedDex[]>(["meteora", "raydium", "orca"]);
 
   const t = STRINGS[lang];
   const walletValid = walletAddress.trim().length >= 32;
@@ -596,7 +655,7 @@ function App() {
     },
   );
 
-  const pools = poolsQuery.data?.pools ?? [];
+  const pools = (poolsQuery.data?.pools ?? []) as UiPool[];
 
   const visiblePools = useMemo(() => {
     const base = [...pools].sort((a, b) => b.signalScore - a.signalScore);
@@ -604,12 +663,16 @@ function App() {
     switch (chip) {
       case "hot":
         return base.filter((pool) => pool.signalType === PoolSignalType.ENTER);
+      case "meteora":
+        return base.filter((pool) => (pool.dex ?? "meteora") === "meteora");
+      case "raydium":
+        return base.filter((pool) => pool.dex === "raydium");
+      case "orca":
+        return base.filter((pool) => pool.dex === "orca");
       case "smart":
         return base.filter((pool) => pool.smartMoneyScore >= smartThreshold);
       case "organic":
         return base.filter((pool) => pool.jupScore >= minJup);
-      case "meteora":
-        return base;
       case "all":
       default:
         return base;
@@ -731,10 +794,32 @@ function App() {
       toastMessage(error instanceof Error ? error.message : String(error));
     },
   });
+  const discoveryQuery = useQuery({
+    queryKey: ["discovery"],
+    queryFn: fetchDiscoveryStatus,
+    refetchInterval: 30_000,
+  });
+  const discoveryMutation = useMutation({
+    mutationFn: saveDiscoverySettings,
+    onSuccess: async (result) => {
+      setEnabledDexes(result.settings.enabledDexes);
+      toastMessage(lang === "ru" ? "Настройки DEX обновлены" : "DEX settings updated");
+      await discoveryQuery.refetch();
+    },
+    onError: (error) => {
+      toastMessage(error instanceof Error ? error.message : String(error));
+    },
+  });
 
   const analytics = analyticsQuery.data;
   const positions = positionsQuery.data?.positions ?? [];
   const prices = pricesQuery.data?.prices ?? {};
+  const discovery = discoveryQuery.data;
+  useEffect(() => {
+    if (discovery?.settings.enabledDexes) {
+      setEnabledDexes(discovery.settings.enabledDexes);
+    }
+  }, [discovery?.settings.enabledDexes]);
   const totalPnlUsd = analytics?.totalPnlUsd ?? positionsQuery.data?.totalPnlUsd ?? 0;
   const totalFeesEarned = analytics?.totalFeesEarned ?? positionsQuery.data?.totalFeesEarned ?? 0;
   const totalLiquidityUsd = positionsQuery.data?.totalLiquidityUsd ?? 0;
@@ -745,6 +830,8 @@ function App() {
   const trackedBalanceUsd = Math.max(0, totalLiquidityUsd + totalPnlUsd);
   const activePoolsCount = positions.length;
   const activeSignalsCount = visiblePools.filter((pool) => pool.signalType === PoolSignalType.ENTER).length;
+  const discoveryCandidates = discovery?.candidates ?? [];
+  const discoveryTotals = discovery?.totals ?? { candidates: 0, meteora: 0, raydium: 0, orca: 0 };
 
   const sortedPositions = useMemo(
     () => [...positions].sort((a, b) => b.liquidityUsd - a.liquidityUsd),
@@ -830,6 +917,15 @@ function App() {
   function toggleLanguage(next: Language) {
     setLang(next);
     toastMessage(next === "ru" ? "Язык: Русский" : "Language: English");
+  }
+
+  function toggleDex(dex: SupportedDex) {
+    const next = enabledDexes.includes(dex)
+      ? enabledDexes.filter((item) => item !== dex)
+      : [...enabledDexes, dex];
+    const normalized: SupportedDex[] = next.length > 0 ? next : ["meteora"];
+    setEnabledDexes(normalized);
+    discoveryMutation.mutate(normalized);
   }
 
   function connectWallet(providerOverride?: string) {
@@ -1028,6 +1124,14 @@ function App() {
               <div className="metric-lbl">Executions</div>
             </div>
             <div className="metric">
+              <div className="metric-val">{enabledDexes.length}</div>
+              <div className="metric-lbl">DEX enabled</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{discoveryCandidates.length}</div>
+              <div className="metric-lbl">Discovered</div>
+            </div>
+            <div className="metric">
               <div className="metric-val">{botStatus?.recentAlerts.length ?? 0}</div>
               <div className="metric-lbl">Recent alerts</div>
             </div>
@@ -1118,6 +1222,8 @@ function App() {
             { id: "all", label: "ALL SIGNALS" },
             { id: "hot", label: "🔥 HOT" },
             { id: "meteora", label: "METEORA" },
+            { id: "raydium", label: "RAYDIUM" },
+            { id: "orca", label: "ORCA" },
             { id: "smart", label: "SMART $" },
             { id: "organic", label: "ORGANIC" },
           ].map((item) => (
@@ -1161,7 +1267,8 @@ function App() {
                         {pool.name}
                       </div>
                       <div className="token-pair">
-                        METEORA DLMM · bin step {pool.binStep}
+                        {(pool.dex ?? "meteora").toUpperCase()} · bin step {pool.binStep}
+                        {pool.isDiscoveryCandidate ? " · discovery" : ""}
                       </div>
                     </div>
                   </div>
@@ -1760,6 +1867,66 @@ function App() {
               }} />
               <span className="toggle-slider" />
             </label>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="section-title" id="st-dexes">
+            DEX DISCOVERY
+          </div>
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { id: "meteora", label: "Meteora DLMM", hint: "LP + launch flow" },
+                { id: "raydium", label: "Raydium", hint: "CLMM / CPMM" },
+                { id: "orca", label: "Orca Whirlpool", hint: "Whirlpool pools" },
+              ].map((item) => {
+                const dex = item.id as SupportedDex;
+                const active = enabledDexes.includes(dex);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`setting-row dashboard-card-button ${active ? "active" : ""}`}
+                    onClick={() => toggleDex(dex)}
+                    style={{ justifyContent: "space-between" }}
+                  >
+                    <div className="setting-row-info">
+                      <div className="setting-icon" style={{ background: active ? "rgba(57,255,20,.12)" : "rgba(255,255,255,.05)" }}>
+                        {active ? "ON" : "OFF"}
+                      </div>
+                      <div>
+                        <div className="setting-label">{item.label}</div>
+                        <div className="setting-sub">{item.hint}</div>
+                      </div>
+                    </div>
+                    <div className="setting-right">{active ? "✓" : "—"}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="paper-trade-hint" style={{ marginTop: 12 }}>
+              Active: {enabledDexes.join(", ") || "none"} · candidates {discoveryTotals.candidates}
+            </div>
+          </div>
+          <div className="card" style={{ paddingTop: 8, paddingBottom: 8 }}>
+            {discoveryCandidates.length > 0 ? (
+              discoveryCandidates.slice(0, 5).map((candidate) => (
+                <div className="smartmoney-row" key={candidate.id}>
+                  <div className="sm-wallet" style={{ fontSize: 12, color: "var(--text)" }}>
+                    {candidate.pool.name}
+                  </div>
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--neon-cyan)" }}>
+                    {candidate.dex.toUpperCase()} · {candidate.source.toUpperCase()}
+                  </div>
+                  <div className="sm-amount" style={{ color: candidate.confidence >= 0.6 ? "var(--neon-green)" : "var(--neon-orange)" }}>
+                    {Math.round(candidate.confidence * 100)}%
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-4 text-sm text-[var(--text-dim)]">No discovery candidates yet</div>
+            )}
           </div>
         </div>
 

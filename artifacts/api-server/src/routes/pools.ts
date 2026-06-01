@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { GetPoolsQueryParams, GetPoolParams } from "@workspace/api-zod";
+import { GetPoolsQueryParams, GetPoolParams, PoolSignalType, PoolIlRisk } from "@workspace/api-zod";
 import { enrichPool } from "../lib/pools";
+import { loadDiscoveryCandidates, loadDiscoverySettings, mergeDiscoveredPools, parseDexList } from "../lib/discovery";
+import { resolveStorageDir } from "../lib/bot-status";
 
 const router = Router();
 
@@ -48,6 +50,42 @@ async function fetchMeteoraPools(limit: number, minTvl: number): Promise<PoolLis
   return payload;
 }
 
+function snapshotToApiPool(pool: any): PoolRecord {
+  return {
+    address: pool.address,
+    name: pool.name,
+    tokenX: pool.tokenX,
+    tokenY: pool.tokenY,
+    tvl: Number(pool.tvlUsd ?? pool.tvl ?? 0),
+    volume24h: Number(pool.volume24hUsd ?? pool.volume24h ?? 0),
+    fee24h: Number(pool.fee24hUsd ?? pool.fee24h ?? 0),
+    feeRate: Number(pool.feeRatePct ?? pool.feeRate ?? 0),
+    binStep: Number(pool.binStep ?? 1),
+    signalScore: Number(pool.signalScore ?? 0),
+    jupScore: Number(pool.jupScore ?? 0),
+    smartMoneyScore: Number(pool.smartMoneyScore ?? 0),
+    ilRisk: normalizeIlRisk(pool.ilRisk),
+    signalType: normalizeSignalType(pool.signalSeed ?? pool.signalType),
+    currentPrice: Number(pool.currentPrice ?? 0),
+    activeBinId: Number(pool.activeBinId ?? 0),
+    ...(pool.dex ? { dex: pool.dex } : {}),
+    ...(pool.discoveryConfidence !== undefined ? { discoveryConfidence: pool.discoveryConfidence } : {}),
+    ...(pool.discoverySource ? { discoverySource: pool.discoverySource } : {}),
+    ...(pool.discoverySignature ? { discoverySignature: pool.discoverySignature } : {}),
+    ...(pool.isDiscoveryCandidate !== undefined ? { isDiscoveryCandidate: pool.isDiscoveryCandidate } : {}),
+  } as PoolRecord;
+}
+
+function normalizeSignalType(signal: unknown) {
+  if (signal === "ENTER" || signal === "WATCH" || signal === "AVOID") return signal;
+  return PoolSignalType.WATCH;
+}
+
+function normalizeIlRisk(risk: unknown) {
+  if (risk === PoolIlRisk.LOW || risk === PoolIlRisk.MEDIUM || risk === PoolIlRisk.HIGH) return risk;
+  return PoolIlRisk.MEDIUM;
+}
+
 router.get("/", async (req, res) => {
   try {
     const query = GetPoolsQueryParams.parse({
@@ -56,8 +94,18 @@ router.get("/", async (req, res) => {
       minJupScore: req.query.minJupScore ? Number(req.query.minJupScore) : 0,
     });
 
+    const storageDir = resolveStorageDir();
+    const discoverySettings = await loadDiscoverySettings(storageDir, parseDexList(process.env.BOT_ENABLED_DEXES));
+    const candidates = await loadDiscoveryCandidates(storageDir, 100);
     const data = await fetchMeteoraPools(query.limit, query.minTvl);
-    const pools = data.pools.filter((pool) => pool.jupScore >= query.minJupScore);
+    const discoveredPools = mergeDiscoveredPools(
+      data.pools.map((pool) => ({ ...pool, dex: "meteora" as const })) as any,
+      candidates,
+      discoverySettings.enabledDexes,
+    ).map((pool) => snapshotToApiPool(pool));
+    const pools = discoveredPools
+      .filter((pool) => pool.tvl >= query.minTvl && pool.jupScore >= query.minJupScore)
+      .slice(0, query.limit);
 
     return res.json({
       ...data,

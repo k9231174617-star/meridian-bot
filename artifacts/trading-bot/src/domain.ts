@@ -1,4 +1,5 @@
 export type BotMode = "paper" | "dry-run" | "live";
+export type SupportedDex = "meteora" | "raydium" | "orca";
 export type SignalType =
   | "LIQUIDITY_SURGE"
   | "PRICE_DISLOCATION"
@@ -20,6 +21,7 @@ export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 export type PoolSnapshot = {
   address: string;
   name: string;
+  dex?: SupportedDex;
   tokenX: string;
   tokenY: string;
   tokenXMint?: string;
@@ -61,6 +63,10 @@ export type PoolSnapshot = {
   signalSeed: "ENTER" | "WATCH" | "AVOID";
   currentPrice: number;
   activeBinId: number;
+  discoveryConfidence?: number;
+  discoverySource?: "meteora-api" | "wss-log" | "fallback";
+  discoverySignature?: string;
+  isDiscoveryCandidate?: boolean;
 };
 
 export type PriceSnapshot = {

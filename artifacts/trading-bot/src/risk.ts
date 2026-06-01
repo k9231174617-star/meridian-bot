@@ -57,6 +57,10 @@ export class RiskEngine {
       return this.reject("Pool tokens are blocked by allow/deny policy", false);
     }
 
+    if (!bypassPaperFilters && !isRiskExit && pool.isDiscoveryCandidate && pool.discoverySource !== "meteora-api") {
+      return this.reject("Discovery candidate is watch-only until on-chain verification completes", false);
+    }
+
     if (!bypassPaperFilters && !isRiskExit) {
       const ageReason = this.checkPoolAge(pool, policy);
       if (ageReason) {

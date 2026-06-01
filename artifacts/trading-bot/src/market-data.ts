@@ -186,6 +186,7 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   return {
     address: toString(record.address),
     name,
+    dex: toDexLabel(record.dex ?? record.protocol ?? record.source),
     tokenX,
     tokenY,
     tokenXMint,
@@ -475,6 +476,7 @@ function fallbackPools(limit: number): PoolSnapshot[] {
     {
       address: "synthetic-sol-usdc",
       name: "SOL-USDC",
+      dex: "meteora",
       tokenX: "SOL",
       tokenY: "USDC",
       tokenXMint: TOKEN_MINTS.SOL,
@@ -501,6 +503,7 @@ function fallbackPools(limit: number): PoolSnapshot[] {
     {
       address: "synthetic-jup-usdc",
       name: "JUP-USDC",
+      dex: "meteora",
       tokenX: "JUP",
       tokenY: "USDC",
       tokenXMint: TOKEN_MINTS.JUP,
@@ -527,6 +530,7 @@ function fallbackPools(limit: number): PoolSnapshot[] {
     {
       address: "synthetic-bonk-usdc",
       name: "BONK-USDC",
+      dex: "raydium",
       tokenX: "BONK",
       tokenY: "USDC",
       tokenXMint: TOKEN_MINTS.BONK,
@@ -553,6 +557,7 @@ function fallbackPools(limit: number): PoolSnapshot[] {
     {
       address: "synthetic-ray-usdc",
       name: "RAY-USDC",
+      dex: "orca",
       tokenX: "RAY",
       tokenY: "USDC",
       tokenXMint: TOKEN_MINTS.RAY,
@@ -579,6 +584,7 @@ function fallbackPools(limit: number): PoolSnapshot[] {
     {
       address: "synthetic-meme-usdc",
       name: "MEME-USDC",
+      dex: "meteora",
       tokenX: "MEME",
       tokenY: "USDC",
       tokenXMint: "MEME",
@@ -605,4 +611,10 @@ function fallbackPools(limit: number): PoolSnapshot[] {
   ];
 
   return pools.slice(0, limit);
+}
+
+function toDexLabel(value: unknown) {
+  const dex = toString(value).toLowerCase();
+  if (dex === "meteora" || dex === "raydium" || dex === "orca") return dex;
+  return undefined;
 }

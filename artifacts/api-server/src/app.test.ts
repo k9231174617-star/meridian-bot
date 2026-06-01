@@ -83,6 +83,83 @@ test("pools endpoint filters and normalizes pool data", { concurrency: false }, 
   }
 });
 
+test("pools endpoint merges discovery candidates when dexes are enabled", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const originalStorageDir = process.env.BOT_STORAGE_DIR;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "bot-pools-discovery-api-"));
+  await mkdir(dir, { recursive: true });
+  await Promise.all([
+    writeFile(
+      path.join(dir, "discovery-settings.json"),
+      JSON.stringify({ enabledDexes: ["raydium"], updatedAt: "2026-06-01T00:00:00.000Z" }, null, 2),
+      "utf8",
+    ),
+    writeFile(
+      path.join(dir, "discovery-candidates.jsonl"),
+      [
+        JSON.stringify({
+          kind: "candidate",
+          candidate: {
+            id: "raydium:def",
+            dex: "raydium",
+            source: "wss-log",
+            signature: "def",
+            detectedAt: "2026-06-01T00:00:00.000Z",
+            confidence: 0.72,
+            keywords: ["raydium"],
+            pool: {
+              address: "discovery-raydium-def",
+              name: "RAYDIUM DISCOVERY def",
+              dex: "raydium",
+              tokenX: "RAY",
+              tokenY: "SOL",
+              tvlUsd: 140000,
+              volume24hUsd: 10_000,
+              fee24hUsd: 180,
+              feeRatePct: 0.13,
+              binStep: 4,
+              signalScore: 68,
+              jupScore: 66,
+              smartMoneyScore: 62,
+              ilRisk: "HIGH",
+              signalSeed: "WATCH",
+              currentPrice: 0,
+              activeBinId: 0,
+            },
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    ),
+  ]);
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/pair/all")) {
+      return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`Unexpected fetch request: ${url}`);
+  }) as typeof fetch;
+
+  process.env.BOT_STORAGE_DIR = dir;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await originalFetch(`${baseUrl}/api/pools?limit=5&minTvl=100000&minJupScore=0`);
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as {
+        pools: Array<{ address: string; name: string }>;
+        total: number;
+      };
+      assert.equal(body.total, 1);
+      assert.equal(body.pools[0]?.address, "discovery-raydium-def");
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env.BOT_STORAGE_DIR = originalStorageDir;
+  }
+});
+
 test("prices endpoint returns normalized token prices", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -212,6 +289,87 @@ test("paper trade status endpoint is available", { concurrency: false }, async (
     const body = (await response.json()) as { status: string };
     assert.equal(body.status, "idle");
   });
+});
+
+test("discovery endpoint reads and updates enabled dexes", { concurrency: false }, async () => {
+  const originalStorageDir = process.env.BOT_STORAGE_DIR;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "bot-discovery-api-"));
+  await mkdir(dir, { recursive: true });
+  await Promise.all([
+    writeFile(
+      path.join(dir, "discovery-settings.json"),
+      JSON.stringify({ enabledDexes: ["meteora", "raydium"], updatedAt: "2026-06-01T00:00:00.000Z" }, null, 2),
+      "utf8",
+    ),
+    writeFile(
+      path.join(dir, "discovery-candidates.jsonl"),
+      [
+        JSON.stringify({
+          kind: "candidate",
+          candidate: {
+            id: "raydium:abc",
+            dex: "raydium",
+            source: "wss-log",
+            signature: "abc",
+            detectedAt: "2026-06-01T00:00:00.000Z",
+            confidence: 0.71,
+            keywords: ["raydium"],
+            pool: {
+              address: "discovery-raydium-abc",
+              name: "RAYDIUM DISCOVERY abc",
+              dex: "raydium",
+              tokenX: "RAY",
+              tokenY: "SOL",
+              tvlUsd: 25_000,
+              volume24hUsd: 0,
+              fee24hUsd: 0,
+              feeRatePct: 0,
+              binStep: 4,
+              signalScore: 66,
+              jupScore: 64,
+              smartMoneyScore: 62,
+              ilRisk: "HIGH",
+              signalSeed: "WATCH",
+              currentPrice: 0,
+              activeBinId: 0,
+            },
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    ),
+  ]);
+
+  process.env.BOT_STORAGE_DIR = dir;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const initial = await fetch(`${baseUrl}/api/bot/discovery`);
+      assert.equal(initial.status, 200);
+      const initialBody = await initial.json() as {
+        settings: { enabledDexes: string[] };
+        candidates: Array<{ dex: string }>;
+        totals: { candidates: number; raydium: number };
+      };
+      assert.deepEqual(initialBody.settings.enabledDexes.sort(), ["meteora", "raydium"].sort());
+      assert.equal(initialBody.candidates.length, 1);
+      assert.equal(initialBody.totals.raydium, 1);
+
+      const update = await fetch(`${baseUrl}/api/bot/discovery`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ enabledDexes: ["meteora", "orca"] }),
+      });
+      assert.equal(update.status, 200);
+      const updateBody = await update.json() as { settings: { enabledDexes: string[] } };
+      assert.deepEqual(updateBody.settings.enabledDexes.sort(), ["meteora", "orca"].sort());
+    });
+  } finally {
+    process.env.BOT_STORAGE_DIR = originalStorageDir;
+  }
 });
 
 test("metrics endpoint exposes scrapeable text", { concurrency: false }, async () => {

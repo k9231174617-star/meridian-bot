@@ -7,6 +7,7 @@
 - `BOT_PAPER_DEBUG_FORCE_SIGNAL=true`
 - `BOT_PAPER_DEBUG_BYPASS_RISK=true`
 - `BOT_PROVIDER=direct`
+- `BOT_ENABLED_DEXES=meteora,raydium,orca`
 - `BOT_RPC_URL`
 - `RPC_URL` or `WS_URL` as aliases when the environment already standardizes
   those names
@@ -33,6 +34,7 @@
 - `BOT_ENABLE_WSS_POOL_WATCHER=true`
 - `BOT_RPC_WS_URL`
 - `BOT_WSS_LOG_KEYWORDS`
+- `GET /api/bot/discovery` to inspect and toggle DEX discovery sources
 - dashboard `Paper Trading` control via `/api/bot/paper-trade`
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`

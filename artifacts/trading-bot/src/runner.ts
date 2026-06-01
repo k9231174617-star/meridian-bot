@@ -10,6 +10,13 @@ import { createAlertSink } from "./alerts.js";
 import { TokenSafetyInspector } from "./security.js";
 import { PoolWatcher } from "./pool-watcher.js";
 import { MemeIntelService } from "./meme-intel.js";
+import {
+  appendDiscoveryCandidate,
+  buildDiscoveryCandidate,
+  loadDiscoveryCandidates,
+  loadDiscoverySettings,
+  mergeDiscoveredPools,
+} from "./dex-discovery.js";
 import type { BotMode, MarketSnapshot, RetryJob, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
@@ -58,6 +65,19 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   });
   const stopPoolWatcher = await poolWatcher.start(async (event) => {
     metrics.log("wss_pool_candidate", event);
+    if (storage) {
+      for (const dex of event.dexes) {
+        const candidate = buildDiscoveryCandidate({
+          dex,
+          signature: event.signature,
+          detectedAt: event.detectedAt,
+          keywords: event.keywords,
+          confidence: 0.72,
+          source: "wss-log",
+        });
+        await appendDiscoveryCandidate(config.storageDir, candidate);
+      }
+    }
     await emitAlert({
       severity: "info",
       title: "Potential new pool or launch detected",
@@ -89,6 +109,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     while (true) {
       cycles += 1;
       metrics.recordCycle();
+      const discoverySettings = await loadDiscoverySettings(config.storageDir, config.enabledDexes);
 
       let snapshot;
       try {
@@ -119,6 +140,14 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
             createdAt: new Date().toISOString(),
           });
         }
+        snapshot = {
+          ...snapshot,
+          pools: mergeDiscoveredPools(
+            snapshot.pools.filter((pool) => !pool.dex || discoverySettings.enabledDexes.includes(pool.dex)),
+            await loadDiscoveryCandidates(config.storageDir, 50),
+            discoverySettings.enabledDexes,
+          ),
+        };
         metrics.recordSnapshot(snapshot.capturedAt);
         state = { ...state, consecutiveFailures: 0, lastSnapshotAt: snapshot.capturedAt, lastBreakerReason: undefined };
       } catch (error) {
@@ -182,6 +211,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
         signals: cycleSignals.length,
         mode: config.mode,
         provider: config.provider,
+        enabledDexes: discoverySettings.enabledDexes,
         debugForceSignal: config.paperDebugForceSignal,
         debugBypassRisk: config.paperDebugBypassRisk,
       });

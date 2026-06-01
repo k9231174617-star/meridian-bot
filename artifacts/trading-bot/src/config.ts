@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import type { BotMode, RiskPolicy } from "./domain.js";
+import type { BotMode, RiskPolicy, SupportedDex } from "./domain.js";
 
 export type HardenedRiskPolicy = RiskPolicy & {
   maxSnapshotAgeMs: number;
@@ -21,6 +21,7 @@ const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   BOT_MODE: z.enum(["paper", "dry-run", "live"]).default("paper"),
   BOT_PROVIDER: z.enum(["direct", "local-api"]).default("direct"),
+  BOT_ENABLED_DEXES: z.string().default("meteora,raydium,orca"),
   BOT_MARKET_DATA_BASE_URL: z.string().default("http://127.0.0.1:8081/api"),
   BOT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15_000),
   BOT_MAX_CYCLES: optionalPositiveInteger(),
@@ -113,6 +114,7 @@ function optionalPositiveInteger() {
 export type BotConfig = {
   mode: BotMode;
   provider: "direct" | "local-api";
+  enabledDexes: SupportedDex[];
   marketDataBaseUrl: string;
   intervalMs: number;
   maxCycles?: number;
@@ -197,6 +199,7 @@ export function loadConfig(env = process.env): BotConfig {
   return {
     mode: parsed.BOT_MODE,
     provider: parsed.BOT_PROVIDER,
+    enabledDexes: parseDexList(parsed.BOT_ENABLED_DEXES),
     marketDataBaseUrl: parsed.BOT_MARKET_DATA_BASE_URL,
     intervalMs: parsed.BOT_INTERVAL_MS,
     maxCycles: parsed.BOT_MAX_CYCLES,
@@ -283,4 +286,14 @@ export function parseCsvList(value: string | undefined): string[] {
   if (!value) return [];
 
   return [...new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))];
+}
+
+export function parseDexList(value: string | undefined): SupportedDex[] {
+  const allowed: SupportedDex[] = [];
+  for (const entry of parseCsvList(value).map((item) => item.toLowerCase())) {
+    if (entry === "meteora" || entry === "raydium" || entry === "orca") {
+      if (!allowed.includes(entry)) allowed.push(entry);
+    }
+  }
+  return allowed.length > 0 ? allowed : ["meteora", "raydium", "orca"];
 }

@@ -76,7 +76,9 @@ an explicit remote API endpoint.
   a pool-age gate, optional pool-metadata verification, a price-dislocation
   guardrail, `BOT_PAPER_MAX_CYCLES` for bounded paper sessions, and a local
   `BOT_PAPER_DEBUG_FORCE_SIGNAL` / `BOT_PAPER_DEBUG_BYPASS_RISK` pair for
-  guaranteed test-trading sessions,
+  guaranteed test-trading sessions, plus `BOT_ENABLED_DEXES` for initial
+  DEX selection and the runtime discovery settings endpoint for switching
+  Meteora, Raydium, and Orca on or off,
   JSONL storage fallback via `BOT_STORAGE_DIR` when no database URL is
   configured.
 - Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
@@ -108,6 +110,8 @@ an explicit remote API endpoint.
   more accurate LP risk estimate.
 - The API now exposes `/api/bot/status` from the shared bot storage directory,
   so the dashboard can show the latest run, status, and recent alerts.
+- The API now exposes `/api/bot/discovery` so the dashboard can toggle DEX
+  discovery sources and inspect recent Raydium, Orca, and Meteora candidates.
 - The dashboard also includes a Paper Trading control that calls
   `/api/bot/paper-trade` for bounded test sessions and exposes the latest
   runtime counters plus the active data source.
