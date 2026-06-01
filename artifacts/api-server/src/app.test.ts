@@ -200,3 +200,13 @@ test("bot status endpoint reads shared storage", { concurrency: false }, async (
     process.env.BOT_STORAGE_DIR = originalStorageDir;
   }
 });
+
+test("paper trade status endpoint is available", { concurrency: false }, async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/bot/paper-trade/status`);
+    assert.equal(response.status, 200);
+
+    const body = (await response.json()) as { status: string };
+    assert.equal(body.status, "idle");
+  });
+});

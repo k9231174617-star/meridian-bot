@@ -78,6 +78,8 @@ an explicit remote API endpoint.
   is available.
 - The API now exposes `/api/bot/status` from the shared bot storage directory,
   so the dashboard can show the latest run, status, and recent alerts.
+- The dashboard also includes a Paper Trading control that calls
+  `/api/bot/paper-trade` for bounded test sessions.
 - `BOT_BACKTEST_SNAPSHOTS_FILE` can point the backtester at a JSON or JSONL
   snapshot file for deterministic replay.
 - Deployment manifests and runbook notes live under `deploy/`.

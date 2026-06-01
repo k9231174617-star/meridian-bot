@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Area,
   AreaChart,
@@ -51,6 +51,18 @@ type BotStatus = {
     message: string;
     createdAt: string;
   }>;
+};
+
+type PaperTradeStatus = {
+  status: "idle" | "running" | "completed" | "failed";
+  pid?: number;
+  startedAt?: string;
+  endedAt?: string;
+  request?: {
+    cycles: number;
+    intervalMs?: number;
+  };
+  error?: string;
 };
 
 const STRINGS: Record<Language, StringMap> = {
@@ -419,6 +431,15 @@ async function fetchBotStatus(): Promise<BotStatus> {
   return (await response.json()) as BotStatus;
 }
 
+async function fetchPaperTradeStatus(): Promise<PaperTradeStatus> {
+  const response = await fetch("/api/bot/paper-trade/status", { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`Paper trade status request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as PaperTradeStatus;
+}
+
 function App() {
   const [lang, setLang] = useState<Language>(() => readStorage(LANGUAGE_KEY, "en"));
   const [currentPage, setCurrentPage] = useState<Page>(() => readStorage(PAGE_KEY, "signals") as Page);
@@ -439,6 +460,7 @@ function App() {
   const [selectedPoolAddress, setSelectedPoolAddress] = useState<string | null>(null);
   const [toast, setToast] = useState<string>("");
   const [scanSeconds, setScanSeconds] = useState(18 * 60 + 24);
+  const [paperTradeCycles, setPaperTradeCycles] = useState(() => Number(readStorage("paper_trade_cycles", "5")) || 5);
 
   const t = STRINGS[lang];
   const walletValid = walletAddress.trim().length >= 32;
@@ -495,6 +517,10 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(SMART_KEY, String(smartThreshold));
   }, [smartThreshold]);
+
+  useEffect(() => {
+    window.localStorage.setItem("paper_trade_cycles", String(paperTradeCycles));
+  }, [paperTradeCycles]);
 
   useEffect(() => {
     window.localStorage.setItem(CHIP_KEY, chip);
@@ -611,6 +637,37 @@ function App() {
     queryKey: ["bot-status"],
     queryFn: fetchBotStatus,
     refetchInterval: 30_000,
+  });
+  const paperTradeStatusQuery = useQuery({
+    queryKey: ["paper-trade-status"],
+    queryFn: fetchPaperTradeStatus,
+    refetchInterval: 10_000,
+  });
+  const paperTradeMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/bot/paper-trade", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ cycles: paperTradeCycles }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? `Paper trade request failed: ${response.status}`);
+      }
+
+      return payload;
+    },
+    onSuccess: async () => {
+      toastMessage(lang === "ru" ? "▶ Paper trading запущен" : "▶ Paper trading started");
+      await Promise.all([statusQuery.refetch(), paperTradeStatusQuery.refetch()]);
+    },
+    onError: (error) => {
+      toastMessage(error instanceof Error ? error.message : String(error));
+    },
   });
 
   const analytics = analyticsQuery.data;
@@ -800,6 +857,10 @@ function App() {
     toastMessage(t.swapMsg);
   }
 
+  function startPaperTrade() {
+    paperTradeMutation.mutate();
+  }
+
   function walletBalanceLabel() {
     return walletConnected ? shortAddress(walletAddress) : t.noWallet;
   }
@@ -811,6 +872,7 @@ function App() {
 
   const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
   const botStatus = statusQuery.data;
+  const paperTradeStatus = paperTradeStatusQuery.data;
 
   return (
     <main className="dashboard-root min-h-screen bg-background text-foreground">
@@ -883,6 +945,50 @@ function App() {
             <div className="metric">
               <div className="metric-val">{botStatus ? formatRelativeShort(botStatus.updatedAt) : "—"}</div>
               <div className="metric-lbl">Updated</div>
+            </div>
+          </div>
+          <div className="paper-trade-control">
+            <div className="paper-trade-row">
+              <div>
+                <div className="paper-trade-label">Paper trading</div>
+                <div className="paper-trade-sub">
+                  {paperTradeStatus?.status === "running"
+                    ? `Running · PID ${paperTradeStatus.pid ?? "?"}`
+                    : paperTradeStatus?.status === "completed"
+                      ? "Last paper run completed"
+                      : paperTradeStatus?.status === "failed"
+                        ? `Last paper run failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
+                        : "Ready to start a bounded paper session"}
+                </div>
+              </div>
+              <div className={`paper-trade-pill ${paperTradeStatus?.status ?? "idle"}`}>
+                {paperTradeStatus?.status?.toUpperCase() ?? "IDLE"}
+              </div>
+            </div>
+            <div className="paper-trade-row paper-trade-row-controls">
+              <label className="paper-trade-field">
+                <span>Cycles</span>
+                <input
+                  className="paper-trade-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={paperTradeCycles}
+                  onChange={(event) => setPaperTradeCycles(Math.max(1, Number(event.target.value) || 1))}
+                />
+              </label>
+              <button
+                className="connect-wallet-btn paper-trade-button"
+                type="button"
+                onClick={startPaperTrade}
+                disabled={paperTradeMutation.isPending || paperTradeStatus?.status === "running"}
+              >
+                {paperTradeStatus?.status === "running"
+                  ? "RUNNING"
+                  : paperTradeMutation.isPending
+                    ? "STARTING..."
+                    : "PAPER TRADE"}
+              </button>
             </div>
           </div>
         </div>

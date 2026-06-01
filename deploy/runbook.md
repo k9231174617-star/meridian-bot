@@ -15,6 +15,7 @@
 - `BOT_ALERT_WEBHOOK_URL`
 - `BOT_STORAGE_DIR`
 - `BOT_BACKTEST_SNAPSHOTS_FILE`
+- dashboard `Paper Trading` control via `/api/bot/paper-trade`
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
 - allow/deny list variables
