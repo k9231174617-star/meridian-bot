@@ -14,6 +14,7 @@ export type BotStatusResponse = {
     runId: number;
     status: "running" | "completed" | "failed";
     mode?: string;
+    provider?: string;
     startedAt?: string;
     endedAt?: string;
     summary?: Record<string, unknown>;
@@ -35,12 +36,13 @@ export async function loadBotStatus(storageDir = resolveStorageDir()) : Promise<
   const lastFinish = finishes.filter((record) => !lastStart || record.runId === lastStart.runId).at(-1) ?? finishes.at(-1);
   const lastRun = lastStart
     ? {
-        runId: lastStart.runId,
-        status: (lastFinish?.status ?? "running") as "running" | "completed" | "failed",
-        mode: String(lastStart.config.mode ?? ""),
-        startedAt: lastStart.startedAt,
-        endedAt: lastFinish?.endedAt,
-        summary: lastFinish?.summary,
+      runId: lastStart.runId,
+      status: (lastFinish?.status ?? "running") as "running" | "completed" | "failed",
+      mode: String(lastStart.config.mode ?? ""),
+      provider: String(lastStart.config.provider ?? "") || undefined,
+      startedAt: lastStart.startedAt,
+      endedAt: lastFinish?.endedAt,
+      summary: lastFinish?.summary,
       }
     : null;
 

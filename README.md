@@ -42,6 +42,7 @@ an explicit remote API endpoint.
 - `pnpm bot:dev` - run the trading bot in paper mode from source
 - `pnpm bot:paper` - run the compiled bot in paper mode
 - `pnpm bot:paper:trade` - run a bounded paper-trading session using `BOT_PAPER_MAX_CYCLES` or `--cycles`
+- `pnpm bot:paper:trade` also honors `BOT_PAPER_DEBUG_FORCE_SIGNAL` and `BOT_PAPER_DEBUG_BYPASS_RISK` for test runs
 - `pnpm bot:live` - run the compiled bot in live mode
 - `pnpm bot:backtest` - run the built-in backtest against live snapshot samples or a file from `BOT_BACKTEST_SNAPSHOTS_FILE`
 - `pnpm start` - start the API server in production mode and serve the built frontend
@@ -71,6 +72,8 @@ an explicit remote API endpoint.
   circuit-breaker events. The bot also supports pool and token allow/deny lists,
   a pool-age gate, optional pool-metadata verification, a price-dislocation
   guardrail, `BOT_PAPER_MAX_CYCLES` for bounded paper sessions, and a local
+  `BOT_PAPER_DEBUG_FORCE_SIGNAL` / `BOT_PAPER_DEBUG_BYPASS_RISK` pair for
+  guaranteed test-trading sessions,
   JSONL storage fallback via `BOT_STORAGE_DIR` when no database URL is
   configured.
 - Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
@@ -79,7 +82,8 @@ an explicit remote API endpoint.
 - The API now exposes `/api/bot/status` from the shared bot storage directory,
   so the dashboard can show the latest run, status, and recent alerts.
 - The dashboard also includes a Paper Trading control that calls
-  `/api/bot/paper-trade` for bounded test sessions.
+  `/api/bot/paper-trade` for bounded test sessions and exposes the latest
+  runtime counters plus the active data source.
 - `BOT_BACKTEST_SNAPSHOTS_FILE` can point the backtester at a JSON or JSONL
   snapshot file for deterministic replay.
 - Deployment manifests and runbook notes live under `deploy/`.

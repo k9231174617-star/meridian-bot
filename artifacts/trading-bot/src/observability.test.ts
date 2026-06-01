@@ -8,6 +8,7 @@ test("bot metrics track lifecycle, alerts, and rejections", () => {
   const endedAt = "2026-06-01T00:05:00.000Z";
 
   metrics.recordRunStart(startedAt);
+  metrics.recordSnapshot(startedAt);
   metrics.recordCycle(startedAt);
   metrics.recordAlert({
     severity: "warning",
@@ -34,5 +35,7 @@ test("bot metrics track lifecycle, alerts, and rejections", () => {
   assert.equal(telemetry.alerts.warning, 1);
   assert.equal(telemetry.rejections["Pool is blocked by allow/deny policy"], 1);
   assert.equal(summary.cycles, 1);
+  assert.equal(summary.snapshots, 1);
   assert.equal(summary.fills, 1);
+  assert.equal(summary.executions, 1);
 });

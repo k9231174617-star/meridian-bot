@@ -17,6 +17,7 @@ export async function runBacktest(config: BotConfig, snapshots: MarketSnapshot[]
 
   for (const snapshot of snapshots) {
     metrics.recordCycle();
+    metrics.recordSnapshot(snapshot.capturedAt);
     const cycleSignals = signals.generate({ now: snapshot, previous });
     metrics.recordSignals(cycleSignals);
 

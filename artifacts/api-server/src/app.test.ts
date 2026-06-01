@@ -173,8 +173,8 @@ test("bot status endpoint reads shared storage", { concurrency: false }, async (
     writeFile(
       path.join(dir, "runs.jsonl"),
       [
-        JSON.stringify({ kind: "run_start", runId: 1, startedAt: "2026-06-01T00:00:00.000Z", config: { mode: "live" } }),
-        JSON.stringify({ kind: "run_finish", runId: 1, status: "completed", summary: { fills: 2 }, endedAt: "2026-06-01T00:01:00.000Z" }),
+        JSON.stringify({ kind: "run_start", runId: 1, startedAt: "2026-06-01T00:00:00.000Z", config: { mode: "live", provider: "local-api" } }),
+        JSON.stringify({ kind: "run_finish", runId: 1, status: "completed", summary: { snapshots: 4, signals: 2, approved: 1, executions: 1 }, endedAt: "2026-06-01T00:01:00.000Z" }),
       ].join("\n"),
       "utf8",
     ),
@@ -191,9 +191,12 @@ test("bot status endpoint reads shared storage", { concurrency: false }, async (
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/bot/status`);
       assert.equal(response.status, 200);
-      const body = (await response.json()) as { lastRun: { status: string; mode: string } | null; recentAlerts: Array<{ severity: string }> };
+      const body = (await response.json()) as { lastRun: { status: string; mode: string; provider?: string; summary?: { snapshots?: number; executions?: number } } | null; recentAlerts: Array<{ severity: string }> };
       assert.equal(body.lastRun?.status, "completed");
       assert.equal(body.lastRun?.mode, "live");
+      assert.equal(body.lastRun?.provider, "local-api");
+      assert.equal(body.lastRun?.summary?.snapshots, 4);
+      assert.equal(body.lastRun?.summary?.executions, 1);
       assert.equal(body.recentAlerts[0]?.severity, "critical");
     });
   } finally {

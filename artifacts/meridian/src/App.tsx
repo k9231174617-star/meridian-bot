@@ -34,6 +34,19 @@ type WalletRow = {
 };
 
 type StringMap = Record<string, string>;
+type RunSummary = {
+  snapshots?: number;
+  cycles?: number;
+  signals?: number;
+  approved?: number;
+  rejected?: number;
+  fills?: number;
+  executions?: number;
+  failed?: number;
+  simulatedPnlUsd?: number;
+  winRate?: number;
+  maxDrawdownUsd?: number;
+};
 type BotStatus = {
   storageDir: string;
   updatedAt: string;
@@ -41,9 +54,10 @@ type BotStatus = {
     runId: number;
     status: "running" | "completed" | "failed";
     mode?: string;
+    provider?: string;
     startedAt?: string;
     endedAt?: string;
-    summary?: Record<string, unknown>;
+    summary?: RunSummary;
   } | null;
   recentAlerts: Array<{
     severity: "info" | "warning" | "critical";
@@ -61,6 +75,10 @@ type PaperTradeStatus = {
   request?: {
     cycles: number;
     intervalMs?: number;
+    debug?: {
+      forceSignal?: boolean;
+      bypassRisk?: boolean;
+    };
   };
   error?: string;
 };
@@ -475,6 +493,12 @@ function App() {
   const [toast, setToast] = useState<string>("");
   const [scanSeconds, setScanSeconds] = useState(18 * 60 + 24);
   const [paperTradeCycles, setPaperTradeCycles] = useState(() => Number(readStorage("paper_trade_cycles", "5")) || 5);
+  const [paperTradeDebugForceSignal, setPaperTradeDebugForceSignal] = useState(() =>
+    readBool("paper_trade_debug_force_signal", true),
+  );
+  const [paperTradeDebugBypassRisk, setPaperTradeDebugBypassRisk] = useState(() =>
+    readBool("paper_trade_debug_bypass_risk", true),
+  );
 
   const t = STRINGS[lang];
   const walletValid = walletAddress.trim().length >= 32;
@@ -535,6 +559,14 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem("paper_trade_cycles", String(paperTradeCycles));
   }, [paperTradeCycles]);
+
+  useEffect(() => {
+    window.localStorage.setItem("paper_trade_debug_force_signal", String(paperTradeDebugForceSignal));
+  }, [paperTradeDebugForceSignal]);
+
+  useEffect(() => {
+    window.localStorage.setItem("paper_trade_debug_bypass_risk", String(paperTradeDebugBypassRisk));
+  }, [paperTradeDebugBypassRisk]);
 
   useEffect(() => {
     window.localStorage.setItem(CHIP_KEY, chip);
@@ -665,7 +697,13 @@ function App() {
           "content-type": "application/json",
           accept: "application/json",
         },
-        body: JSON.stringify({ cycles: paperTradeCycles }),
+        body: JSON.stringify({
+          cycles: paperTradeCycles,
+          debug: {
+            forceSignal: paperTradeDebugForceSignal,
+            bypassRisk: paperTradeDebugBypassRisk,
+          },
+        }),
       });
 
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -902,6 +940,8 @@ function App() {
   const botStatus = statusQuery.data;
   const paperTradeStatus = paperTradeStatusQuery.data;
   const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
+  const runSummary: RunSummary = botStatus?.lastRun?.summary ?? {};
+  const summaryExecutions = runSummary.executions ?? ((runSummary.fills ?? 0) + (runSummary.failed ?? 0));
 
   return (
     <main className="dashboard-root min-h-screen bg-background text-foreground">
@@ -968,6 +1008,26 @@ function App() {
               <div className="metric-lbl">Mode</div>
             </div>
             <div className="metric">
+              <div className="metric-val">{botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}</div>
+              <div className="metric-lbl">Data source</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{Number(runSummary.snapshots ?? 0)}</div>
+              <div className="metric-lbl">Snapshots</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{Number(runSummary.signals ?? 0)}</div>
+              <div className="metric-lbl">Signals</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{Number(runSummary.approved ?? 0)}</div>
+              <div className="metric-lbl">Approved</div>
+            </div>
+            <div className="metric">
+              <div className="metric-val">{Number(summaryExecutions ?? 0)}</div>
+              <div className="metric-lbl">Executions</div>
+            </div>
+            <div className="metric">
               <div className="metric-val">{botStatus?.recentAlerts.length ?? 0}</div>
               <div className="metric-lbl">Recent alerts</div>
             </div>
@@ -1008,6 +1068,22 @@ function App() {
                   onChange={(event) => setPaperTradeCycles(Math.max(1, Number(event.target.value) || 1))}
                 />
               </label>
+              <label className="paper-trade-flag">
+                <input
+                  type="checkbox"
+                  checked={paperTradeDebugForceSignal}
+                  onChange={(event) => setPaperTradeDebugForceSignal(event.target.checked)}
+                />
+                <span>Force test signal</span>
+              </label>
+              <label className="paper-trade-flag">
+                <input
+                  type="checkbox"
+                  checked={paperTradeDebugBypassRisk}
+                  onChange={(event) => setPaperTradeDebugBypassRisk(event.target.checked)}
+                />
+                <span>Bypass risk gates</span>
+              </label>
               <button
                 className="connect-wallet-btn paper-trade-button"
                 type="button"
@@ -1028,6 +1104,11 @@ function App() {
               >
                 {paperTradeStopMutation.isPending ? "STOPPING..." : "STOP PAPER TRADE"}
               </button>
+            </div>
+            <div className="paper-trade-hint">
+              {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
+                ? `Debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+                : `Real signal mode · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`}
             </div>
           </div>
         </div>

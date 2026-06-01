@@ -34,6 +34,8 @@ test("backtest returns metrics", async () => {
       provider: "direct",
       marketDataBaseUrl: "http://127.0.0.1:8081/api",
       intervalMs: 1000,
+      paperDebugForceSignal: false,
+      paperDebugBypassRisk: false,
       risk: {
         capitalUsd: 10_000,
         maxPositionBps: 500,

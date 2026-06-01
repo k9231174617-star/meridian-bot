@@ -4,6 +4,8 @@
 - `DATABASE_URL`
 - `BOT_MODE=live`
 - `BOT_PAPER_MAX_CYCLES` for bounded paper sessions
+- `BOT_PAPER_DEBUG_FORCE_SIGNAL=true`
+- `BOT_PAPER_DEBUG_BYPASS_RISK=true`
 - `BOT_PROVIDER=direct`
 - `BOT_RPC_URL`
 - One of:
@@ -52,6 +54,7 @@ sudo systemctl enable --now trading-bot
 - `pnpm smoke`
 - `pnpm bot:backtest` or `pnpm bot:backtest -- --snapshots <file>`
 - `pnpm bot:paper:trade -- --cycles 5` before every live change
+- keep `BOT_PAPER_DEBUG_FORCE_SIGNAL=true` and `BOT_PAPER_DEBUG_BYPASS_RISK=true` for test-only sessions
 - `pnpm bot:live` only in a tiny-capital pilot after paper verification and manual approval
 
 ## Pilot checklist

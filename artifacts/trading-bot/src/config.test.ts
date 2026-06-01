@@ -43,9 +43,13 @@ test("config exposes pool age and verification flags", () => {
     BOT_MAX_POOL_AGE_HOURS: "24",
     BOT_REQUIRE_VERIFIED_POOL_METADATA: "true",
     BOT_PAPER_MAX_CYCLES: "7",
+    BOT_PAPER_DEBUG_FORCE_SIGNAL: "true",
+    BOT_PAPER_DEBUG_BYPASS_RISK: "true",
   });
 
   assert.equal(config.risk.maxPoolAgeHours, 24);
   assert.equal(config.risk.requireVerifiedPoolMetadata, true);
   assert.equal(config.paperMaxCycles, 7);
+  assert.equal(config.paperDebugForceSignal, true);
+  assert.equal(config.paperDebugBypassRisk, true);
 });

@@ -11,9 +11,10 @@ router.get("/status", (_req, res) => {
 router.post("/", async (req: Request, res: Response) => {
   const cycles = toPositiveInteger(req.body?.cycles) ?? 1;
   const intervalMs = toPositiveInteger(req.body?.intervalMs);
+  const debug = normalizeDebug(req.body?.debug);
 
   try {
-    const status = await controller.start({ cycles, intervalMs });
+    const status = await controller.start({ cycles, intervalMs, ...(debug ? { debug } : {}) });
     res.status(202).json(status);
   } catch (error) {
     if (error instanceof Error && error.name === "PaperTradeAlreadyRunningError") {
@@ -52,6 +53,15 @@ function toPositiveInteger(value: unknown): number | undefined {
   if (!Number.isFinite(parsed)) return undefined;
   const normalized = Math.floor(parsed);
   return normalized > 0 ? normalized : undefined;
+}
+
+function normalizeDebug(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const forceSignal = record.forceSignal === true;
+  const bypassRisk = record.bypassRisk === true;
+  if (!forceSignal && !bypassRisk) return undefined;
+  return { forceSignal, bypassRisk };
 }
 
 export default router;

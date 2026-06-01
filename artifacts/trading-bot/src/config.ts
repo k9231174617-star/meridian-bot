@@ -29,6 +29,8 @@ const configSchema = z.object({
   BOT_MARKET_DATA_MAX_AGE_MS: z.coerce.number().int().positive().default(120_000),
   BOT_CIRCUIT_BREAKER_FAILURES: z.coerce.number().int().positive().default(3),
   BOT_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(15 * 60_000),
+  BOT_PAPER_DEBUG_FORCE_SIGNAL: booleanFromEnv().default(false),
+  BOT_PAPER_DEBUG_BYPASS_RISK: booleanFromEnv().default(false),
   BOT_REQUIRE_VERIFIED_POOL_METADATA: booleanFromEnv().default(false),
   BOT_ALLOWED_POOL_ADDRESSES: z.string().default(""),
   BOT_DENIED_POOL_ADDRESSES: z.string().default(""),
@@ -74,6 +76,8 @@ export type BotConfig = {
   intervalMs: number;
   maxCycles?: number;
   paperMaxCycles?: number;
+  paperDebugForceSignal: boolean;
+  paperDebugBypassRisk: boolean;
   risk: HardenedRiskPolicy;
   rpcUrl?: string;
   signerSecretKey?: string;
@@ -122,6 +126,8 @@ export function loadConfig(env = process.env): BotConfig {
     intervalMs: parsed.BOT_INTERVAL_MS,
     maxCycles: parsed.BOT_MAX_CYCLES,
     paperMaxCycles: parsed.BOT_PAPER_MAX_CYCLES,
+    paperDebugForceSignal: parsed.BOT_PAPER_DEBUG_FORCE_SIGNAL,
+    paperDebugBypassRisk: parsed.BOT_PAPER_DEBUG_BYPASS_RISK,
     rpcUrl: parsed.BOT_RPC_URL,
     signerSecretKey: parsed.BOT_SIGNER_SECRET_KEY,
     signerSecretKeyFile: parsed.BOT_SIGNER_SECRET_KEY_FILE,

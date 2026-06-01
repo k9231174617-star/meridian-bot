@@ -120,11 +120,13 @@ export type RiskDecision = {
 };
 
 export type BacktestMetrics = {
+  snapshots: number;
   cycles: number;
   signals: number;
   approved: number;
   rejected: number;
   fills: number;
+  executions: number;
   simulatedPnlUsd: number;
   winRate: number;
   maxDrawdownUsd: number;

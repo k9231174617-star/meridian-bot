@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 export type PaperTradeRequest = {
   cycles: number;
   intervalMs?: number;
+  debug?: {
+    forceSignal?: boolean;
+    bypassRisk?: boolean;
+  };
 };
 
 export type PaperTradeStatus = {
@@ -53,6 +57,7 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
 
       const cycles = Math.max(1, Math.floor(request.cycles));
       const intervalMs = request.intervalMs ? Math.max(1000, Math.floor(request.intervalMs)) : undefined;
+      const debug = normalizeDebugOptions(request.debug);
       const args = [
         "--filter",
         "@workspace/trading-bot",
@@ -73,12 +78,18 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         startedAt,
         pid: undefined,
         command: ["pnpm", ...args],
-        request: { cycles, ...(intervalMs ? { intervalMs } : {}) },
+        request: { cycles, ...(intervalMs ? { intervalMs } : {}), ...(debug ? { debug } : {}) },
+      };
+
+      const env = {
+        ...process.env,
+        ...(debug?.forceSignal ? { BOT_PAPER_DEBUG_FORCE_SIGNAL: "true" } : {}),
+        ...(debug?.bypassRisk ? { BOT_PAPER_DEBUG_BYPASS_RISK: "true" } : {}),
       };
 
       const child = spawnFn("pnpm", args, {
         cwd: workspaceRoot,
-        env: process.env,
+        env,
         stdio: ["ignore", "pipe", "pipe"],
       } as SpawnOptionsWithoutStdio);
 
@@ -169,4 +180,12 @@ function pipeOutput(child: ChildProcessWithoutNullStreams, onLog: NonNullable<Pa
 function defaultLog(entry: { stream: "stdout" | "stderr"; line: string }) {
   const prefix = entry.stream === "stderr" ? "paper_trade_stderr" : "paper_trade_stdout";
   console.log(JSON.stringify({ event: prefix, line: entry.line }));
+}
+
+function normalizeDebugOptions(debug?: PaperTradeRequest["debug"]) {
+  if (!debug) return undefined;
+  const forceSignal = debug.forceSignal === true;
+  const bypassRisk = debug.bypassRisk === true;
+  if (!forceSignal && !bypassRisk) return undefined;
+  return { forceSignal, bypassRisk };
 }

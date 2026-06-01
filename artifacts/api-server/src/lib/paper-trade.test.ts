@@ -27,10 +27,10 @@ function createMockProcess() {
 
 test("paper trade controller starts and completes a bounded session", async () => {
   const logs: Array<{ stream: string; line: string }> = [];
-  let captured: { command: string; args: string[]; cwd: string } | undefined;
+  let captured: { command: string; args: string[]; cwd: string; env: Record<string, string | undefined> } | undefined;
   let child: ReturnType<typeof createMockProcess> | undefined;
-  const spawnFn = (command: string, args: string[], options: { cwd?: string }) => {
-    captured = { command, args, cwd: options.cwd ?? "" };
+  const spawnFn = (command: string, args: string[], options: { cwd?: string; env?: Record<string, string | undefined> }) => {
+    captured = { command, args, cwd: options.cwd ?? "", env: options.env ?? {} };
     child = createMockProcess();
     queueMicrotask(() => {
       child?.stdout.emit("data", "paper run started\n");
@@ -45,14 +45,18 @@ test("paper trade controller starts and completes a bounded session", async () =
     onLog: (entry) => logs.push(entry),
   });
 
-  const status = await controller.start({ cycles: 3, intervalMs: 4000 });
+  const status = await controller.start({ cycles: 3, intervalMs: 4000, debug: { forceSignal: true, bypassRisk: true } });
 
   assert.equal(captured?.command, "pnpm");
   assert.deepEqual(captured?.args.slice(0, 6), ["--filter", "@workspace/trading-bot", "run", "paper:trade", "--", "--cycles"]);
   assert.equal(captured?.cwd, "/workspace");
+  assert.equal(captured?.env.BOT_PAPER_DEBUG_FORCE_SIGNAL, "true");
+  assert.equal(captured?.env.BOT_PAPER_DEBUG_BYPASS_RISK, "true");
   assert.equal(status.status, "completed");
   assert.equal(status.request?.cycles, 3);
   assert.equal(status.request?.intervalMs, 4000);
+  assert.equal(status.request?.debug?.forceSignal, true);
+  assert.equal(status.request?.debug?.bypassRisk, true);
   assert.equal(logs[0]?.line, "paper run started");
 });
 

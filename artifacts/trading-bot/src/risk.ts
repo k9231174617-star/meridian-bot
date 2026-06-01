@@ -14,17 +14,23 @@ export type RiskState = {
 export class RiskEngine {
   constructor(private readonly policy: RiskPolicy) {}
 
-  evaluate(signal: Signal, state: RiskState, snapshot: MarketSnapshot): RiskDecision {
+  evaluate(
+    signal: Signal,
+    state: RiskState,
+    snapshot: MarketSnapshot,
+    options?: { bypassPaperFilters?: boolean },
+  ): RiskDecision {
     const policy = this.normalizedPolicy();
     const now = new Date().toISOString();
     const pool = snapshot.pools.find((entry) => entry.address === signal.poolAddress);
     const isRiskExit = signal.type === "RISK_EXIT";
+    const bypassPaperFilters = options?.bypassPaperFilters === true;
 
-    if (this.isBreakerActive(state)) {
+    if (!bypassPaperFilters && this.isBreakerActive(state)) {
       return this.reject("Circuit breaker is active", true);
     }
 
-    if (state.consecutiveFailures >= policy.circuitBreakerFailureLimit) {
+    if (!bypassPaperFilters && state.consecutiveFailures >= policy.circuitBreakerFailureLimit) {
       return this.reject(
         `Market-data failure streak ${state.consecutiveFailures} reached the breaker threshold`,
         true,
@@ -35,23 +41,23 @@ export class RiskEngine {
       return this.reject("Signal pool is missing from the latest snapshot", true);
     }
 
-    if (snapshot.pools.length === 0 || snapshot.prices.length === 0) {
+    if (!bypassPaperFilters && (snapshot.pools.length === 0 || snapshot.prices.length === 0)) {
       return this.reject("Snapshot does not contain enough market data", true);
     }
 
-    if (this.isSnapshotStale(snapshot, policy.maxSnapshotAgeMs)) {
+    if (!bypassPaperFilters && this.isSnapshotStale(snapshot, policy.maxSnapshotAgeMs)) {
       return this.reject("Market snapshot is stale", true);
     }
 
-    if (!isRiskExit && !this.isPoolPermitted(signal.poolAddress, policy)) {
+    if (!bypassPaperFilters && !isRiskExit && !this.isPoolPermitted(signal.poolAddress, policy)) {
       return this.reject("Pool is blocked by allow/deny policy", false);
     }
 
-    if (!isRiskExit && !this.arePoolTokensPermitted(pool, policy)) {
+    if (!bypassPaperFilters && !isRiskExit && !this.arePoolTokensPermitted(pool, policy)) {
       return this.reject("Pool tokens are blocked by allow/deny policy", false);
     }
 
-    if (!isRiskExit) {
+    if (!bypassPaperFilters && !isRiskExit) {
       const ageReason = this.checkPoolAge(pool, policy);
       if (ageReason) {
         return this.reject(ageReason, false);
@@ -64,18 +70,18 @@ export class RiskEngine {
     }
 
     const dislocationBps = computePriceDislocationBps(pool, snapshot);
-    if (!isRiskExit && dislocationBps > policy.maxPriceDislocationBps) {
+    if (!bypassPaperFilters && !isRiskExit && dislocationBps > policy.maxPriceDislocationBps) {
       return this.reject(
         `Price dislocation ${dislocationBps.toFixed(0)} bps above policy limit ${policy.maxPriceDislocationBps} bps`,
         false,
       );
     }
 
-    if (!isRiskExit && state.dailyLossUsd >= policy.capitalUsd * (policy.maxDailyLossBps / 10_000)) {
+    if (!bypassPaperFilters && !isRiskExit && state.dailyLossUsd >= policy.capitalUsd * (policy.maxDailyLossBps / 10_000)) {
       return this.reject("Daily loss limit reached", true);
     }
 
-    if (!isRiskExit && signal.confidence < policy.minSignalConfidence) {
+    if (!bypassPaperFilters && !isRiskExit && signal.confidence < policy.minSignalConfidence) {
       return this.reject(
         `Signal confidence ${signal.confidence} below minimum ${policy.minSignalConfidence}`,
         false,
@@ -93,20 +99,22 @@ export class RiskEngine {
       return this.reject("Exposure limit reached", false);
     }
 
-    if (!isRiskExit && signal.slippageBps > policy.maxSlippageBps) {
+    if (!bypassPaperFilters && !isRiskExit && signal.slippageBps > policy.maxSlippageBps) {
       return this.reject(
         `Slippage ${signal.slippageBps} bps above policy limit ${policy.maxSlippageBps} bps`,
         false,
       );
     }
 
-    if (signal.risk === "HIGH" && !isRiskExit) {
+    if (!bypassPaperFilters && signal.risk === "HIGH" && !isRiskExit) {
       return this.reject("Pool risk is too high for new exposure", false);
     }
 
     return {
       approved: true,
-      reason: `Approved at ${now} (${dislocationBps.toFixed(0)} bps dislocation)`,
+      reason: bypassPaperFilters
+        ? `Approved in paper debug mode at ${now}`
+        : `Approved at ${now} (${dislocationBps.toFixed(0)} bps dislocation)`,
       cappedAmountUsd: round2(cappedAmountUsd),
       circuitBreakerActive: false,
     };

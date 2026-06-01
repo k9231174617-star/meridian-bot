@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { loadConfig, resolveSignerSecretKey } from "./config.js";
 import { createStorage } from "./storage.js";
 import { DirectMarketDataProvider, LocalApiMarketDataProvider } from "./market-data.js";
@@ -6,7 +7,7 @@ import { RiskEngine, type RiskState } from "./risk.js";
 import { PaperExecutionClient, DryRunExecutionClient, JupiterSwapExecutionClient } from "./execution.js";
 import { BotMetrics } from "./observability.js";
 import { createAlertSink } from "./alerts.js";
-import type { BotMode, TradeIntent } from "./domain.js";
+import type { BotMode, MarketSnapshot, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
   maxCycles?: number;
@@ -58,6 +59,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       let snapshot;
       try {
         snapshot = await provider.fetchSnapshot();
+        metrics.recordSnapshot(snapshot.capturedAt);
         state = { ...state, consecutiveFailures: 0, lastSnapshotAt: snapshot.capturedAt, lastBreakerReason: undefined };
       } catch (error) {
         state = {
@@ -90,9 +92,28 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
         continue;
       }
 
-      const cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined });
+      let cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined });
+      if (config.mode === "paper" && config.paperDebugForceSignal && cycleSignals.length === 0) {
+        const forcedSignal = buildPaperDebugSignal(snapshot, cycles, config.provider);
+        if (forcedSignal) {
+          cycleSignals = [forcedSignal];
+          metrics.log("paper_debug_signal", {
+            cycle: cycles,
+            signalId: forcedSignal.id,
+            provider: config.provider,
+            source: "forced",
+          });
+        }
+      }
       metrics.recordSignals(cycleSignals);
-      metrics.log("cycle", { cycle: cycles, signals: cycleSignals.length, mode: config.mode, provider: config.provider });
+      metrics.log("cycle", {
+        cycle: cycles,
+        signals: cycleSignals.length,
+        mode: config.mode,
+        provider: config.provider,
+        debugForceSignal: config.paperDebugForceSignal,
+        debugBypassRisk: config.paperDebugBypassRisk,
+      });
 
       if (storage) {
         await storage.saveSnapshot(snapshot);
@@ -122,7 +143,9 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
           }
         }
 
-        const decision = risk.evaluate(signal, state, snapshot);
+        const decision = risk.evaluate(signal, state, snapshot, {
+          bypassPaperFilters: config.mode === "paper" && config.paperDebugBypassRisk,
+        });
         metrics.recordApproval(decision.approved);
         if (!decision.approved) {
           metrics.recordRejection(decision.reason);
@@ -237,6 +260,37 @@ export async function runPaperTrading(overrides?: RunBotOverrides) {
   });
 }
 
+function buildPaperDebugSignal(snapshot: MarketSnapshot, cycle: number, provider: string) {
+  const pool = snapshot.pools[0];
+  if (!pool) return null;
+
+  const id = `dbg_${createHash("sha256")
+    .update(JSON.stringify({ capturedAt: snapshot.capturedAt, cycle, poolAddress: pool.address, provider }))
+    .digest("hex")
+    .slice(0, 24)}`;
+
+  return {
+    id,
+    type: "PRICE_DISLOCATION" as const,
+    action: "SWAP" as const,
+    poolAddress: pool.address,
+    poolName: pool.name,
+    risk: pool.ilRisk,
+    confidence: 0.99,
+    severity: 99,
+    reason: [
+      "Paper debug forced signal",
+      `Provider ${provider}`,
+      `Snapshot ${snapshot.capturedAt}`,
+      `Pool ${pool.address}`,
+    ],
+    suggestedCapitalUsd: round2(Math.max(25, Math.min(250, pool.tvlUsd * 0.01))),
+    slippageBps: 25,
+    priorityFeeMicroLamports: 2_500,
+    createdAt: snapshot.capturedAt,
+  };
+}
+
 async function buildExecutor(config: ReturnType<typeof loadConfig>) {
   if (config.mode === "paper") return new PaperExecutionClient();
   if (config.mode === "dry-run") return new DryRunExecutionClient();
@@ -257,4 +311,8 @@ function serializeError(error: unknown) {
   }
 
   return { message: String(error) };
+}
+
+function round2(value: number) {
+  return Math.round(value * 100) / 100;
 }

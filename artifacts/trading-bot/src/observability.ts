@@ -6,6 +6,7 @@ type Telemetry = {
   startedAt?: string;
   endedAt?: string;
   lastCycleAt?: string;
+  lastSnapshotAt?: string;
   lastExecutionAt?: string;
   lastAlertAt?: string;
   alerts: {
@@ -19,11 +20,13 @@ type Telemetry = {
 };
 
 export class BotMetrics {
+  snapshots = 0;
   cycles = 0;
   signals = 0;
   approved = 0;
   rejected = 0;
   fills = 0;
+  executions = 0;
   failed = 0;
   simulatedPnlUsd = 0;
   private equityCurve: number[] = [0];
@@ -51,6 +54,11 @@ export class BotMetrics {
     this.telemetry.lastCycleAt = now;
   }
 
+  recordSnapshot(now = new Date().toISOString()) {
+    this.snapshots += 1;
+    this.telemetry.lastSnapshotAt = now;
+  }
+
   recordSignals(signals: Signal[]) {
     this.signals += signals.length;
   }
@@ -71,6 +79,7 @@ export class BotMetrics {
 
   recordExecution(result: ExecutionResult) {
     this.telemetry.lastExecutionAt = result.executedAt;
+    this.executions += 1;
 
     if (result.status === "filled" || result.status === "simulated") {
       this.fills += 1;
@@ -84,11 +93,13 @@ export class BotMetrics {
 
   snapshot(): BacktestMetrics {
     return {
+      snapshots: this.snapshots,
       cycles: this.cycles,
       signals: this.signals,
       approved: this.approved,
       rejected: this.rejected,
       fills: this.fills,
+      executions: this.executions,
       simulatedPnlUsd: round2(this.simulatedPnlUsd),
       winRate: this.fills > 0 ? round2((this.approved / Math.max(1, this.approved + this.rejected)) * 100) : 0,
       maxDrawdownUsd: round2(this.maxDrawdown()),
