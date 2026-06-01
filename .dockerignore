@@ -1,0 +1,12 @@
+.git
+.cache
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+**/.next
+**/.vite
+**/.pnpm
+**/*.log
+tmp
+coverage
