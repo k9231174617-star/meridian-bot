@@ -5,7 +5,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV CI=true
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY lib ./lib
