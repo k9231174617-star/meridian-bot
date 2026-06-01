@@ -129,6 +129,7 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   );
   const liquidityLocked = toOptionalBoolean(record.liquidity_locked ?? record.liquidityLocked ?? record.lp_locked);
   const topHolderSharePct = toOptionalNumber(record.top_holder_share_pct ?? record.topHolderSharePct ?? record.top_holders_pct);
+  const topTenHolderSharePct = toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct ?? record.top_10_holder_share_pct);
   const rugRiskScore = toOptionalNumber(record.rug_risk_score ?? record.rugRiskScore ?? record.risk_score);
   const tokenSafetyScore = toOptionalNumber(record.token_safety_score ?? record.tokenSafetyScore ?? record.safety_score);
   const jupScore = computeJupScore(tvlUsd, volume24hUsd, feeRatePct, binStep);
@@ -150,6 +151,7 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
     freezeAuthorityRevoked,
     liquidityLocked,
     topHolderSharePct,
+    topTenHolderSharePct,
     rugRiskScore,
     tokenSafetyScore,
     tvlUsd,

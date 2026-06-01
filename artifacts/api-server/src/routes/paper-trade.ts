@@ -1,7 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { createPaperTradeController } from "../lib/paper-trade.js";
-
-const controller = createPaperTradeController();
+import { paperTradeController as controller } from "../lib/paper-trade.js";
 const router = Router();
 
 router.get("/status", (_req, res) => {

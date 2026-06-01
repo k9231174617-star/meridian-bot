@@ -17,6 +17,7 @@ export type PoolSnapshot = {
   freezeAuthorityRevoked?: boolean;
   liquidityLocked?: boolean;
   topHolderSharePct?: number;
+  topTenHolderSharePct?: number;
   rugRiskScore?: number;
   tokenSafetyScore?: number;
   tvlUsd: number;
@@ -115,6 +116,7 @@ export type RiskPolicy = {
   tokenAllowlist: string[];
   tokenDenylist: string[];
   maxTopHolderSharePct?: number;
+  maxTopTenHolderSharePct?: number;
   maxRugRiskScore?: number;
 };
 

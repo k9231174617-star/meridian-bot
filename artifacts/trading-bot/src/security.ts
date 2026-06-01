@@ -5,6 +5,7 @@ type MintSafetySample = {
   mintAuthorityRevoked?: boolean;
   freezeAuthorityRevoked?: boolean;
   topHolderSharePct?: number;
+  topTenHolderSharePct?: number;
   rugRiskScore: number;
   creatorRiskScore: number;
   liquidityLocked?: boolean;
@@ -19,6 +20,7 @@ type SafetyInspectorOptions = {
   rugcheckApiKey?: string;
   cacheTtlMs?: number;
   maxTopHolderSharePct?: number;
+  maxTopTenHolderSharePct?: number;
   maxRugRiskScore?: number;
 };
 
@@ -27,12 +29,14 @@ export class TokenSafetyInspector {
   private readonly cache = new Map<string, { value: MintSafetySample; expiresAt: number }>();
   private readonly cacheTtlMs: number;
   private readonly maxTopHolderSharePct: number;
+  private readonly maxTopTenHolderSharePct: number;
   private readonly maxRugRiskScore: number;
 
   constructor(private readonly options: SafetyInspectorOptions = {}) {
     this.rpc = options.rpcUrl ? new Connection(options.rpcUrl, "confirmed") : undefined;
     this.cacheTtlMs = options.cacheTtlMs ?? 10 * 60_000;
     this.maxTopHolderSharePct = options.maxTopHolderSharePct ?? 80;
+    this.maxTopTenHolderSharePct = options.maxTopTenHolderSharePct ?? 95;
     this.maxRugRiskScore = options.maxRugRiskScore ?? 70;
   }
 
@@ -89,6 +93,7 @@ export class TokenSafetyInspector {
     let mintAuthorityRevoked: boolean | undefined;
     let freezeAuthorityRevoked: boolean | undefined;
     let topHolderSharePct: number | undefined;
+    let topTenHolderSharePct: number | undefined;
     let creatorRiskScore = 0;
     let rugRiskScore = 0;
 
@@ -107,12 +112,21 @@ export class TokenSafetyInspector {
 
     if (supplyInfo.status === "fulfilled" && largestInfo.status === "fulfilled") {
       const supply = Number(supplyInfo.value.value.uiAmount ?? supplyInfo.value.value.amount ?? 0);
-      const largest = Number(largestInfo.value.value[0]?.uiAmount ?? largestInfo.value.value[0]?.amount ?? 0);
+      const largestAccounts = largestInfo.value.value ?? [];
+      const largest = Number(largestAccounts[0]?.uiAmount ?? largestAccounts[0]?.amount ?? 0);
+      const topTen = largestAccounts.slice(0, 10).reduce((sum, account) => sum + Number(account?.uiAmount ?? account?.amount ?? 0), 0);
       if (Number.isFinite(supply) && supply > 0 && Number.isFinite(largest) && largest > 0) {
         topHolderSharePct = round2((largest / supply) * 100);
         if (topHolderSharePct > this.maxTopHolderSharePct) {
           notes.push(`top holder concentration ${topHolderSharePct.toFixed(2)}%`);
           rugRiskScore += 20;
+        }
+      }
+      if (Number.isFinite(supply) && supply > 0 && Number.isFinite(topTen) && topTen > 0) {
+        topTenHolderSharePct = round2((topTen / supply) * 100);
+        if (topTenHolderSharePct > this.maxTopTenHolderSharePct) {
+          notes.push(`top 10 holder concentration ${topTenHolderSharePct.toFixed(2)}%`);
+          rugRiskScore += 15;
         }
       }
     }
@@ -156,6 +170,7 @@ export class TokenSafetyInspector {
       mintAuthorityRevoked,
       freezeAuthorityRevoked,
       topHolderSharePct,
+      topTenHolderSharePct,
       rugRiskScore,
       creatorRiskScore,
       liquidityLocked: Boolean(mintAuthorityRevoked && freezeAuthorityRevoked && (topHolderSharePct ?? 100) <= this.maxTopHolderSharePct),
@@ -200,8 +215,9 @@ function mergeSamples(samples: Array<MintSafetySample | undefined>) {
   return present.reduce<MintSafetySample>((acc, sample) => ({
     mintAuthorityRevoked: acc.mintAuthorityRevoked && sample.mintAuthorityRevoked,
     freezeAuthorityRevoked: acc.freezeAuthorityRevoked && sample.freezeAuthorityRevoked,
-    topHolderSharePct: Math.max(acc.topHolderSharePct ?? 0, sample.topHolderSharePct ?? 0) || undefined,
-    rugRiskScore: Math.max(acc.rugRiskScore, sample.rugRiskScore),
+      topHolderSharePct: Math.max(acc.topHolderSharePct ?? 0, sample.topHolderSharePct ?? 0) || undefined,
+      topTenHolderSharePct: Math.max(acc.topTenHolderSharePct ?? 0, sample.topTenHolderSharePct ?? 0) || undefined,
+      rugRiskScore: Math.max(acc.rugRiskScore, sample.rugRiskScore),
     creatorRiskScore: Math.max(acc.creatorRiskScore, sample.creatorRiskScore),
     liquidityLocked: Boolean(acc.liquidityLocked && sample.liquidityLocked),
     checkedAt: sample.checkedAt,

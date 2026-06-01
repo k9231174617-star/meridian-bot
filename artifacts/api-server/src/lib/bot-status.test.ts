@@ -31,6 +31,11 @@ test("loadBotStatus reads last run and recent alerts", async () => {
   assert.equal(status.lastRun?.provider, "direct");
   assert.equal(status.lastRun?.summary?.snapshots, 3);
   assert.equal(status.lastRun?.summary?.executions, 1);
+  assert.equal(status.totals.runsStarted, 1);
+  assert.equal(status.totals.runsFinished, 1);
+  assert.equal(status.totals.alerts, 2);
+  assert.equal(status.totals.alertsBySeverity.warning, 1);
+  assert.equal(status.totals.alertsBySeverity.critical, 1);
   assert.equal(status.recentAlerts.length, 2);
   assert.equal(status.recentAlerts[1]?.severity, "critical");
 });

@@ -31,6 +31,8 @@ export type PaperTradeControllerOptions = {
   onLog?: (entry: { stream: "stdout" | "stderr"; line: string }) => void;
 };
 
+export const paperTradeController = createPaperTradeController();
+
 export function createPaperTradeController(options: PaperTradeControllerOptions = {}) {
   const workspaceRoot = options.workspaceRoot ?? resolveWorkspaceRoot();
   const spawnFn = options.spawnFn ?? spawn;

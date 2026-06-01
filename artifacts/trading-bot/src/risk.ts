@@ -76,6 +76,13 @@ export class RiskEngine {
       );
     }
 
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.topTenHolderSharePct === "number" && pool.topTenHolderSharePct > policy.maxTopTenHolderSharePct) {
+      return this.reject(
+        `Top 10 holder concentration ${pool.topTenHolderSharePct.toFixed(2)}% above policy limit ${policy.maxTopTenHolderSharePct.toFixed(2)}%`,
+        false,
+      );
+    }
+
     if (!bypassPaperFilters && !isRiskExit && typeof pool.rugRiskScore === "number" && pool.rugRiskScore > policy.maxRugRiskScore) {
       return this.reject(
         `Token rug risk ${pool.rugRiskScore.toFixed(0)} above policy limit ${policy.maxRugRiskScore.toFixed(0)}`,
@@ -168,6 +175,7 @@ export class RiskEngine {
       maxConcurrentIntents: policy.maxConcurrentIntents ?? 1,
       maxPriceDislocationBps: policy.maxPriceDislocationBps ?? Number.POSITIVE_INFINITY,
       maxTopHolderSharePct: policy.maxTopHolderSharePct ?? 80,
+      maxTopTenHolderSharePct: policy.maxTopTenHolderSharePct ?? 95,
       maxRugRiskScore: policy.maxRugRiskScore ?? 70,
       maxPoolAgeHours: policy.maxPoolAgeHours,
       requireVerifiedPoolMetadata: policy.requireVerifiedPoolMetadata ?? false,

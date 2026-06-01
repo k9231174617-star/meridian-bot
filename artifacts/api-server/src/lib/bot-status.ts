@@ -10,6 +10,16 @@ type AlertRecord = { kind: "alert"; alert: { severity: "info" | "warning" | "cri
 export type BotStatusResponse = {
   storageDir: string;
   updatedAt: string;
+  totals: {
+    runsStarted: number;
+    runsFinished: number;
+    alerts: number;
+    alertsBySeverity: {
+      info: number;
+      warning: number;
+      critical: number;
+    };
+  };
   lastRun: {
     runId: number;
     status: "running" | "completed" | "failed";
@@ -49,6 +59,12 @@ export async function loadBotStatus(storageDir = resolveStorageDir()) : Promise<
   return {
     storageDir,
     updatedAt: new Date().toISOString(),
+    totals: {
+      runsStarted: starts.length,
+      runsFinished: finishes.length,
+      alerts: alerts.length,
+      alertsBySeverity: countAlertSeverities(alerts),
+    },
     lastRun,
     recentAlerts: alerts.slice(-5).map((record) => record.alert),
   };
@@ -75,4 +91,14 @@ async function readRecords<T>(filename: string, storageDir: string): Promise<T[]
   } catch {
     return [];
   }
+}
+
+function countAlertSeverities(alerts: AlertRecord[]) {
+  return alerts.reduce(
+    (acc, record) => {
+      acc[record.alert.severity] += 1;
+      return acc;
+    },
+    { info: 0, warning: 0, critical: 0 },
+  );
 }

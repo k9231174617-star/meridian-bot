@@ -79,12 +79,16 @@ an explicit remote API endpoint.
 - Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
   flows, and it persists tracked LP positions in `bot_positions` when a database
   is available.
+- The API exposes `/metrics` for Prometheus-style scraping, using the shared
+  bot storage directory and current paper-trade controller state.
 - Live swaps now support optional Jito bundle submission via `BOT_USE_JITO=true`
   with a built-in `jitodontfront` memo protection tag, pre-send honeypot
   round-trip quote checks, and a Jito tip configuration.
 - Anti-scam enrichment can pull token safety metadata from RPC and optional
   Rugcheck-like endpoints, then gate risky pools by top-holder concentration,
-  mint/freezer authority state, and risk score.
+  top-10 holder concentration, mint/freezer authority state, and risk score.
+- `BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT` tightens the holder-distribution gate for
+  concentrated token supplies.
 - A websocket pool watcher can be enabled with `BOT_ENABLE_WSS_POOL_WATCHER=true`
   plus `BOT_RPC_WS_URL` to surface logs that look like new pool or launch
   events before the next polling cycle.

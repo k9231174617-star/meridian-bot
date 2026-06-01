@@ -34,6 +34,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       rugcheckApiUrl: config.rugcheckApiUrl,
       rugcheckApiKey: config.rugcheckApiKey,
       maxTopHolderSharePct: config.risk.maxTopHolderSharePct,
+      maxTopTenHolderSharePct: config.risk.maxTopTenHolderSharePct,
       maxRugRiskScore: config.risk.maxRugRiskScore,
     })
     : null;

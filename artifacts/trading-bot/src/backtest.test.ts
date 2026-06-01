@@ -61,6 +61,7 @@ test("backtest returns metrics", async () => {
         maxPoolAgeHours: 48,
         requireVerifiedPoolMetadata: false,
         maxTopHolderSharePct: 80,
+        maxTopTenHolderSharePct: 95,
         maxRugRiskScore: 70,
         poolAllowlist: [],
         poolDenylist: [],

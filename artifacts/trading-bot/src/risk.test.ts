@@ -14,6 +14,7 @@ const policy = {
   maxPoolAgeHours: 48,
   requireVerifiedPoolMetadata: false,
   maxTopHolderSharePct: 80,
+  maxTopTenHolderSharePct: 95,
   maxRugRiskScore: 70,
   poolAllowlist: [],
   poolDenylist: [],
@@ -173,4 +174,69 @@ test("risk engine rejects pools that are too old or unverifiable", () => {
 
   assert.equal(decision.approved, false);
   assert.match(decision.reason, /safety|old|unverified/i);
+});
+
+test("risk engine rejects extreme top ten holder concentration", () => {
+  const engine = new RiskEngine({
+    ...policy,
+    maxTopTenHolderSharePct: 90,
+    maxSnapshotAgeMs: 10_000,
+    circuitBreakerFailureLimit: 3,
+    circuitBreakerCooldownMs: 15 * 60_000,
+  } as never);
+
+  const signal = {
+    id: "signal-4",
+    type: "FEE_MOMENTUM",
+    action: "ADD_LIQUIDITY",
+    poolAddress: "pool-topten",
+    poolName: "SOL-USDC",
+    risk: "LOW",
+    confidence: 0.95,
+    severity: 50,
+    reason: [],
+    suggestedCapitalUsd: 1_000,
+    slippageBps: 50,
+    priorityFeeMicroLamports: 1_500,
+    createdAt: "2026-05-31T00:00:00.000Z",
+  } as const;
+
+  const snapshot = {
+    capturedAt: new Date().toISOString(),
+    pools: [
+      {
+        address: "pool-topten",
+        name: "SOL-USDC",
+        tokenX: "SOL",
+        tokenY: "USDC",
+        tvlUsd: 1_000_000,
+        volume24hUsd: 2_000_000,
+        fee24hUsd: 10_000,
+        feeRatePct: 1,
+        binStep: 4,
+        signalScore: 84,
+        jupScore: 86,
+        smartMoneyScore: 74,
+        ilRisk: "LOW",
+        signalSeed: "ENTER",
+        currentPrice: 170,
+        activeBinId: 12,
+        createdAt: "2026-05-31T00:00:00.000Z",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 20,
+        topTenHolderSharePct: 97,
+      },
+    ],
+    prices: [
+      { symbol: "SOL", price: 170, change24h: 0.5 },
+      { symbol: "USDC", price: 1, change24h: 0 },
+    ],
+  } as const;
+
+  const decision = engine.evaluate(signal as never, { openExposureUsd: 0, dailyLossUsd: 0, consecutiveFailures: 0 }, snapshot as never);
+
+  assert.equal(decision.approved, false);
+  assert.match(decision.reason, /top 10 holder/i);
 });

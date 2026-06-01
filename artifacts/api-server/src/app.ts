@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { loadBotStatus } from "./lib/bot-status";
+import { paperTradeController } from "./lib/paper-trade";
+import { renderPrometheusMetrics } from "./lib/metrics";
 
 const app: Express = express();
 app.disable("x-powered-by");
@@ -32,6 +35,15 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.get("/metrics", async (_req, res) => {
+  try {
+    const status = await loadBotStatus();
+    res.type("text/plain; version=0.0.4").send(renderPrometheusMetrics(status, paperTradeController.getStatus()));
+  } catch {
+    res.status(500).type("text/plain").send("metrics unavailable\n");
+  }
+});
 
 app.use("/api", router);
 

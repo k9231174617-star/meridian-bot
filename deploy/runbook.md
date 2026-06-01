@@ -32,7 +32,9 @@
 - dashboard `Paper Trading` control via `/api/bot/paper-trade`
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
+- `BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT`
 - allow/deny list variables
+- `GET /metrics` for Prometheus-style scraping and uptime checks
 
 ## Docker
 1. Copy `.env.example` to `.env`.
@@ -77,4 +79,5 @@ sudo systemctl enable --now trading-bot
 3. Set `BOT_BACKTEST_SNAPSHOTS_FILE` to a replay file and confirm the backtest passes.
 4. Run `pnpm bot:paper:trade -- --cycles 5` with the live configuration until the risk gates and signal flow are stable.
 5. Enable `BOT_ALERT_WEBHOOK_URL` so circuit-breaker and execution failures are visible outside the host.
-6. Start `pnpm bot:live` with a tiny capital limit and keep the kill switch available.
+6. Verify `/metrics` returns scrapeable text and wire it into your monitoring system.
+7. Start `pnpm bot:live` with a tiny capital limit and keep the kill switch available.

@@ -213,3 +213,39 @@ test("paper trade status endpoint is available", { concurrency: false }, async (
     assert.equal(body.status, "idle");
   });
 });
+
+test("metrics endpoint exposes scrapeable text", { concurrency: false }, async () => {
+  const originalStorageDir = process.env.BOT_STORAGE_DIR;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "bot-metrics-api-"));
+  await mkdir(dir, { recursive: true });
+  await Promise.all([
+    writeFile(
+      path.join(dir, "runs.jsonl"),
+      [
+        JSON.stringify({ kind: "run_start", runId: 1, startedAt: "2026-06-01T00:00:00.000Z", config: { mode: "paper", provider: "direct" } }),
+        JSON.stringify({ kind: "run_finish", runId: 1, status: "completed", summary: { snapshots: 2, signals: 1, approved: 1, fills: 1, executions: 1 }, endedAt: "2026-06-01T00:01:00.000Z" }),
+      ].join("\n"),
+      "utf8",
+    ),
+    writeFile(
+      path.join(dir, "alerts.jsonl"),
+      `${JSON.stringify({ kind: "alert", alert: { severity: "warning", title: "A", message: "B", createdAt: "2026-06-01T00:00:01.000Z" } })}\n`,
+      "utf8",
+    ),
+  ]);
+
+  process.env.BOT_STORAGE_DIR = dir;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/metrics`);
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.match(body, /meridian_bot_runs_started_total 1/);
+      assert.match(body, /meridian_bot_alerts_total 1/);
+      assert.match(body, /meridian_bot_paper_trade_status\{status="idle"\} 1/);
+    });
+  } finally {
+    process.env.BOT_STORAGE_DIR = originalStorageDir;
+  }
+});

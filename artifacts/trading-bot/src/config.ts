@@ -8,6 +8,7 @@ export type HardenedRiskPolicy = RiskPolicy & {
   circuitBreakerCooldownMs: number;
   requireVerifiedPoolMetadata: boolean;
   maxTopHolderSharePct: number;
+  maxTopTenHolderSharePct: number;
   maxRugRiskScore: number;
 };
 
@@ -30,6 +31,7 @@ const configSchema = z.object({
   BOT_MAX_PRICE_DISLOCATION_BPS: z.coerce.number().int().positive().max(100_000).default(750),
   BOT_MARKET_DATA_MAX_AGE_MS: z.coerce.number().int().positive().default(120_000),
   BOT_MAX_TOP_HOLDER_SHARE_PCT: z.coerce.number().min(0).max(100).default(80),
+  BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT: z.coerce.number().min(0).max(100).default(95),
   BOT_MAX_RUG_RISK_SCORE: z.coerce.number().int().min(0).max(100).default(70),
   BOT_CIRCUIT_BREAKER_FAILURES: z.coerce.number().int().positive().default(3),
   BOT_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(15 * 60_000),
@@ -144,6 +146,7 @@ export function loadConfig(env = process.env): BotConfig {
     maxPoolAgeHours: parsed.BOT_MAX_POOL_AGE_HOURS,
     maxPriceDislocationBps: parsed.BOT_MAX_PRICE_DISLOCATION_BPS,
     maxTopHolderSharePct: parsed.BOT_MAX_TOP_HOLDER_SHARE_PCT,
+    maxTopTenHolderSharePct: parsed.BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT,
     maxRugRiskScore: parsed.BOT_MAX_RUG_RISK_SCORE,
     poolAllowlist: allowedPools,
     poolDenylist: deniedPools,
