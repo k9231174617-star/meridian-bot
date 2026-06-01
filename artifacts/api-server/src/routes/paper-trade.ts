@@ -29,6 +29,24 @@ router.post("/", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/stop", async (_req: Request, res: Response) => {
+  try {
+    const status = await controller.stop();
+    res.status(202).json(status);
+  } catch (error) {
+    if (error instanceof Error && error.name === "PaperTradeNotRunningError") {
+      res.status(409).json({
+        status: controller.getStatus(),
+        error: error.message,
+      });
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ error: message });
+  }
+});
+
 function toPositiveInteger(value: unknown): number | undefined {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return undefined;

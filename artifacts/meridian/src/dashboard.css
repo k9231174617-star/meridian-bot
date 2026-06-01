@@ -218,6 +218,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .paper-trade-input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.34);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:12px;outline:none;}
 .paper-trade-input:focus{border-color:rgba(0,255,180,.35);box-shadow:0 0 0 1px rgba(0,255,180,.15);}
 .paper-trade-button{min-width:160px;margin-bottom:0;}
+.paper-trade-stop-button{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(255,45,85,.3);background:rgba(255,45,85,.08);font-family:'Orbitron',monospace;font-size:10px;font-weight:700;letter-spacing:2px;color:var(--neon-red);cursor:pointer;transition:all .2s;}
+.paper-trade-stop-button:hover:not(:disabled){background:rgba(255,45,85,.12);box-shadow:0 0 14px rgba(255,45,85,.2);}
+.paper-trade-stop-button:active:not(:disabled){transform:scale(.98);}
+.paper-trade-stop-button:disabled{opacity:.45;cursor:not-allowed;}
 @media (min-width: 1024px) {
   .dashboard-page { transform: scale(1.05); transform-origin: top center; }
 }

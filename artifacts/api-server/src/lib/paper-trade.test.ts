@@ -8,6 +8,7 @@ function createMockProcess() {
     pid: number;
     stdout: EventEmitter & { setEncoding: (encoding: string) => void };
     stderr: EventEmitter & { setEncoding: (encoding: string) => void };
+    kill: (signal?: NodeJS.Signals) => boolean;
   };
 
   child.pid = 4242;
@@ -15,6 +16,12 @@ function createMockProcess() {
   child.stderr = new EventEmitter() as EventEmitter & { setEncoding: (encoding: string) => void };
   child.stdout.setEncoding = () => undefined;
   child.stderr.setEncoding = () => undefined;
+  child.kill = (signal = "SIGTERM") => {
+    queueMicrotask(() => {
+      child.emit("close", null, signal);
+    });
+    return true;
+  };
   return child;
 }
 
@@ -64,4 +71,21 @@ test("paper trade controller rejects concurrent sessions", async () => {
   assert.equal(controller.getStatus().status, "running");
   child?.emit("close", 0, null);
   await first;
+});
+
+test("paper trade controller stops a running session", async () => {
+  let child: ReturnType<typeof createMockProcess> | undefined;
+  const controller = createPaperTradeController({
+    spawnFn: ((_command: string, _args: string[], _options: { cwd?: string }) => {
+      child = createMockProcess();
+      return child as never;
+    }) as never,
+  });
+
+  const running = controller.start({ cycles: 1 });
+  const stopped = await controller.stop();
+  assert.equal(stopped.status, "idle");
+  assert.equal(controller.getStatus().status, "idle");
+  child?.emit("close", 0, null);
+  await running;
 });

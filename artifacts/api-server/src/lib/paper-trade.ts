@@ -8,7 +8,7 @@ export type PaperTradeRequest = {
 };
 
 export type PaperTradeStatus = {
-  status: "idle" | "running" | "completed" | "failed";
+  status: "idle" | "running" | "stopping" | "completed" | "failed";
   pid?: number;
   startedAt?: string;
   endedAt?: string;
@@ -34,16 +34,18 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
 
   let state: PaperTradeStatus = { status: "idle" };
   let currentProcess: ChildProcessWithoutNullStreams | null = null;
+  let activeRun: Promise<PaperTradeStatus> | null = null;
+  let stopRequested = false;
 
   return {
     getStatus() {
       return state;
     },
     isRunning() {
-      return state.status === "running";
+      return state.status === "running" || state.status === "stopping";
     },
     async start(request: PaperTradeRequest) {
-      if (state.status === "running") {
+      if (this.isRunning()) {
         const error = new Error("Paper trading is already running");
         error.name = "PaperTradeAlreadyRunningError";
         throw error;
@@ -81,11 +83,12 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
       } as SpawnOptionsWithoutStdio);
 
       currentProcess = child;
+      stopRequested = false;
       state = { ...state, pid: child.pid ?? undefined };
 
       pipeOutput(child, onLog);
 
-      return new Promise<PaperTradeStatus>((resolve, reject) => {
+      activeRun = new Promise<PaperTradeStatus>((resolve, reject) => {
         let settled = false;
 
         const finish = (next: PaperTradeStatus) => {
@@ -109,13 +112,35 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         child.once("close", (exitCode, signal) => {
           finish({
             ...state,
-            status: exitCode === 0 ? "completed" : "failed",
+            status: stopRequested ? "stopping" : exitCode === 0 ? "completed" : "failed",
             endedAt: new Date().toISOString(),
             exitCode,
             signal,
           });
         });
       });
+
+      return activeRun;
+    },
+    async stop() {
+      if (!currentProcess || !this.isRunning()) {
+        const error = new Error("Paper trading is not running");
+        error.name = "PaperTradeNotRunningError";
+        throw error;
+      }
+
+      stopRequested = true;
+      state = { ...state, status: "stopping" };
+      currentProcess.kill("SIGTERM");
+
+      if (activeRun) {
+        const result = await activeRun;
+        state = { ...result, status: "idle" };
+        return state;
+      }
+
+      state = { status: "idle" };
+      return state;
     },
   };
 }

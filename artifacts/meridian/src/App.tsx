@@ -54,7 +54,7 @@ type BotStatus = {
 };
 
 type PaperTradeStatus = {
-  status: "idle" | "running" | "completed" | "failed";
+  status: "idle" | "running" | "stopping" | "completed" | "failed";
   pid?: number;
   startedAt?: string;
   endedAt?: string;
@@ -440,6 +440,20 @@ async function fetchPaperTradeStatus(): Promise<PaperTradeStatus> {
   return (await response.json()) as PaperTradeStatus;
 }
 
+async function stopPaperTrade(): Promise<PaperTradeStatus> {
+  const response = await fetch("/api/bot/paper-trade/stop", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error ?? `Stop paper trade request failed: ${response.status}`);
+  }
+
+  return payload as PaperTradeStatus;
+}
+
 function App() {
   const [lang, setLang] = useState<Language>(() => readStorage(LANGUAGE_KEY, "en"));
   const [currentPage, setCurrentPage] = useState<Page>(() => readStorage(PAGE_KEY, "signals") as Page);
@@ -669,6 +683,16 @@ function App() {
       toastMessage(error instanceof Error ? error.message : String(error));
     },
   });
+  const paperTradeStopMutation = useMutation({
+    mutationFn: stopPaperTrade,
+    onSuccess: async () => {
+      toastMessage(lang === "ru" ? "⏹ Paper trading остановлен" : "⏹ Paper trading stopped");
+      await Promise.all([statusQuery.refetch(), paperTradeStatusQuery.refetch()]);
+    },
+    onError: (error) => {
+      toastMessage(error instanceof Error ? error.message : String(error));
+    },
+  });
 
   const analytics = analyticsQuery.data;
   const positions = positionsQuery.data?.positions ?? [];
@@ -861,6 +885,10 @@ function App() {
     paperTradeMutation.mutate();
   }
 
+  function stopPaperTradeRun() {
+    paperTradeStopMutation.mutate();
+  }
+
   function walletBalanceLabel() {
     return walletConnected ? shortAddress(walletAddress) : t.noWallet;
   }
@@ -873,6 +901,7 @@ function App() {
   const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
   const botStatus = statusQuery.data;
   const paperTradeStatus = paperTradeStatusQuery.data;
+  const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
 
   return (
     <main className="dashboard-root min-h-screen bg-background text-foreground">
@@ -954,6 +983,8 @@ function App() {
                 <div className="paper-trade-sub">
                   {paperTradeStatus?.status === "running"
                     ? `Running · PID ${paperTradeStatus.pid ?? "?"}`
+                    : paperTradeStatus?.status === "stopping"
+                      ? "Stopping current run..."
                     : paperTradeStatus?.status === "completed"
                       ? "Last paper run completed"
                       : paperTradeStatus?.status === "failed"
@@ -981,13 +1012,21 @@ function App() {
                 className="connect-wallet-btn paper-trade-button"
                 type="button"
                 onClick={startPaperTrade}
-                disabled={paperTradeMutation.isPending || paperTradeStatus?.status === "running"}
+                disabled={paperTradeMutation.isPending || paperTradeRunning}
               >
-                {paperTradeStatus?.status === "running"
+                {paperTradeRunning
                   ? "RUNNING"
                   : paperTradeMutation.isPending
                     ? "STARTING..."
                     : "PAPER TRADE"}
+              </button>
+              <button
+                className="paper-trade-stop-button"
+                type="button"
+                onClick={stopPaperTradeRun}
+                disabled={!paperTradeRunning || paperTradeStopMutation.isPending}
+              >
+                {paperTradeStopMutation.isPending ? "STOPPING..." : "STOP PAPER TRADE"}
               </button>
             </div>
           </div>
