@@ -23,7 +23,7 @@ export class RiskEngine {
     const policy = this.normalizedPolicy();
     const now = new Date().toISOString();
     const pool = snapshot.pools.find((entry) => entry.address === signal.poolAddress);
-    const isRiskExit = signal.type === "RISK_EXIT";
+    const isRiskExit = this.isRiskExit(signal);
     const bypassPaperFilters = options?.bypassPaperFilters === true;
 
     if (!bypassPaperFilters && this.isBreakerActive(state)) {
@@ -86,6 +86,34 @@ export class RiskEngine {
     if (!bypassPaperFilters && !isRiskExit && typeof pool.rugRiskScore === "number" && pool.rugRiskScore > policy.maxRugRiskScore) {
       return this.reject(
         `Token rug risk ${pool.rugRiskScore.toFixed(0)} above policy limit ${policy.maxRugRiskScore.toFixed(0)}`,
+        false,
+      );
+    }
+
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.degenScore === "number" && pool.degenScore < (policy.minDegenScore ?? 0)) {
+      return this.reject(
+        `Degen score ${pool.degenScore.toFixed(0)} below minimum ${(policy.minDegenScore ?? 0).toFixed(0)}`,
+        false,
+      );
+    }
+
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.socialVelocityScore === "number" && pool.socialVelocityScore < (policy.minSocialVelocityScore ?? 0)) {
+      return this.reject(
+        `Social velocity ${pool.socialVelocityScore.toFixed(0)} below minimum ${(policy.minSocialVelocityScore ?? 0).toFixed(0)}`,
+        false,
+      );
+    }
+
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.previousRugsByDev === "number" && pool.previousRugsByDev > (policy.maxPreviousRugsByDev ?? 0)) {
+      return this.reject(
+        `Developer linked to ${pool.previousRugsByDev.toFixed(0)} previous rugs above limit ${(policy.maxPreviousRugsByDev ?? 0).toFixed(0)}`,
+        false,
+      );
+    }
+
+    if (!bypassPaperFilters && !isRiskExit && typeof pool.whalePressureScore === "number" && pool.whalePressureScore > (policy.maxWhalePressureScore ?? 100)) {
+      return this.reject(
+        `Whale pressure ${pool.whalePressureScore.toFixed(0)} above limit ${(policy.maxWhalePressureScore ?? 100).toFixed(0)}`,
         false,
       );
     }
@@ -154,7 +182,12 @@ export class RiskEngine {
       amountUsd: decision.cappedAmountUsd,
       slippageBps: signal.slippageBps,
       priorityFeeMicroLamports: signal.priorityFeeMicroLamports,
-      route: signal.action === "SWAP" ? "JUPITER" : mode === "paper" ? "PAPER" : "DIRECT_POOL",
+      route: signal.action === "SWAP" || signal.action === "HEDGE"
+        ? "JUPITER"
+        : mode === "paper"
+          ? "PAPER"
+          : "DIRECT_POOL",
+      executionHints: signal.executionHints,
       createdAt: new Date().toISOString(),
     };
   }
@@ -177,6 +210,11 @@ export class RiskEngine {
       maxTopHolderSharePct: policy.maxTopHolderSharePct ?? 80,
       maxTopTenHolderSharePct: policy.maxTopTenHolderSharePct ?? 95,
       maxRugRiskScore: policy.maxRugRiskScore ?? 70,
+      minDegenScore: policy.minDegenScore ?? 30,
+      minSocialVelocityScore: policy.minSocialVelocityScore ?? 55,
+      maxPreviousRugsByDev: policy.maxPreviousRugsByDev ?? 3,
+      maxWhalePressureScore: policy.maxWhalePressureScore ?? 70,
+      splitPositionCount: policy.splitPositionCount ?? 8,
       maxPoolAgeHours: policy.maxPoolAgeHours,
       requireVerifiedPoolMetadata: policy.requireVerifiedPoolMetadata ?? false,
       poolAllowlist: policy.poolAllowlist ?? [],
@@ -257,6 +295,10 @@ export class RiskEngine {
   private reject(reason: string, circuitBreakerActive: boolean): RiskDecision {
     return { approved: false, reason, cappedAmountUsd: 0, circuitBreakerActive };
   }
+
+  private isRiskExit(signal: Signal) {
+    return signal.type === "RISK_EXIT" || signal.type === "RUG_SHIELD" || signal.type === "INSURANCE_HEDGE" || signal.action === "HEDGE";
+  }
 }
 
 export function computePriceDislocationBps(
@@ -280,12 +322,13 @@ function findPrice(prices: MarketSnapshot["prices"], symbol: string) {
 }
 
 function inferSymbolIn(signal: Signal) {
-  if (signal.action === "SWAP") return "SOL";
+  if (signal.action === "SWAP" || signal.action === "HEDGE") return "SOL";
   return undefined;
 }
 
 function inferSymbolOut(signal: Signal) {
   if (signal.action === "SWAP") return "USDC";
+  if (signal.action === "HEDGE") return signal.executionHints?.hedgeTo ?? "USDC";
   return undefined;
 }
 

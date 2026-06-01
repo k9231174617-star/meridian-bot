@@ -1,5 +1,19 @@
 export type BotMode = "paper" | "dry-run" | "live";
-export type SignalType = "LIQUIDITY_SURGE" | "PRICE_DISLOCATION" | "FEE_MOMENTUM" | "RISK_EXIT" | "REBALANCE";
+export type SignalType =
+  | "LIQUIDITY_SURGE"
+  | "PRICE_DISLOCATION"
+  | "FEE_MOMENTUM"
+  | "RISK_EXIT"
+  | "REBALANCE"
+  | "RUG_SHIELD"
+  | "SNIPER_SHADOW"
+  | "BONDING_CURVE_ARB"
+  | "SOCIAL_VELOCITY"
+  | "MEV_RESIST"
+  | "INSURANCE_HEDGE"
+  | "COPY_PASTE_LP"
+  | "FLASH_LP"
+  | "WHALE_ADJUST";
 export type TradeAction = "ADD_LIQUIDITY" | "REMOVE_LIQUIDITY" | "SWAP" | "HEDGE" | "WAIT" | "REBALANCE";
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
@@ -20,6 +34,21 @@ export type PoolSnapshot = {
   topTenHolderSharePct?: number;
   rugRiskScore?: number;
   tokenSafetyScore?: number;
+  degenScore?: number;
+  holderGini?: number;
+  devWalletAgeDays?: number;
+  previousRugsByDev?: number;
+  contractRiskScore?: number;
+  bondingCurveProgressPct?: number;
+  migrateTarget?: "RAYDIUM" | "ORCA" | "METEORA" | "UNKNOWN";
+  socialVelocityScore?: number;
+  socialVelocityDelta?: number;
+  whaleFlowBps?: number;
+  whalePressureScore?: number;
+  fdvUsd?: number;
+  eventWindowActive?: boolean;
+  eventName?: string;
+  eventBlocksRemaining?: number;
   tvlUsd: number;
   volume24hUsd: number;
   fee24hUsd: number;
@@ -60,6 +89,17 @@ export type Signal = {
   slippageBps: number;
   priorityFeeMicroLamports: number;
   impermanentLossPct?: number;
+  degenScore?: number;
+  socialVelocityScore?: number;
+  whalePressureScore?: number;
+  eventName?: string;
+  executionHints?: {
+    splitCount?: number;
+    minDelayMs?: number;
+    maxDelayMs?: number;
+    priorityProtection?: "HIGH" | "MAX";
+    hedgeTo?: string;
+  };
   createdAt: string;
 };
 
@@ -76,6 +116,7 @@ export type TradeIntent = {
   slippageBps: number;
   priorityFeeMicroLamports: number;
   route: "JUPITER" | "DIRECT_POOL" | "PAPER";
+  executionHints?: Signal["executionHints"];
   createdAt: string;
 };
 
@@ -118,6 +159,11 @@ export type RiskPolicy = {
   maxTopHolderSharePct?: number;
   maxTopTenHolderSharePct?: number;
   maxRugRiskScore?: number;
+  minDegenScore?: number;
+  minSocialVelocityScore?: number;
+  maxPreviousRugsByDev?: number;
+  maxWhalePressureScore?: number;
+  splitPositionCount?: number;
 };
 
 export type RiskDecision = {

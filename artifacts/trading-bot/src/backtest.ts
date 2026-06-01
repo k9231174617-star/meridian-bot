@@ -4,12 +4,18 @@ import { RiskEngine, type RiskState } from "./risk.js";
 import { PaperExecutionClient } from "./execution.js";
 import { BotMetrics } from "./observability.js";
 import type { BotConfig } from "./config.js";
+import { MemeIntelService } from "./meme-intel.js";
 
 export async function runBacktest(config: BotConfig, snapshots: MarketSnapshot[]): Promise<BacktestMetrics> {
-  const signals = new SignalEngine();
+  const memeConfig = (config as BotConfig & { meme?: Partial<BotConfig["meme"]> }).meme ?? {};
+  const signals = new SignalEngine(memeConfig);
   const risk = new RiskEngine(config.risk);
   const executor = new PaperExecutionClient();
   const metrics = new BotMetrics();
+  const memeIntel = new MemeIntelService({
+    socialApiUrl: memeConfig.socialApiUrl,
+    eventApiUrl: memeConfig.eventApiUrl,
+  });
   let previous: MarketSnapshot | undefined;
   let state: RiskState = { openExposureUsd: 0, dailyLossUsd: 0, consecutiveFailures: 0 };
 
@@ -17,12 +23,13 @@ export async function runBacktest(config: BotConfig, snapshots: MarketSnapshot[]
 
   for (const snapshot of snapshots) {
     metrics.recordCycle();
-    metrics.recordSnapshot(snapshot.capturedAt);
-    const cycleSignals = signals.generate({ now: snapshot, previous });
+    const enrichedSnapshot = await memeIntel.enrichSnapshot(snapshot);
+    metrics.recordSnapshot(enrichedSnapshot.capturedAt);
+    const cycleSignals = signals.generate({ now: enrichedSnapshot, previous });
     metrics.recordSignals(cycleSignals);
 
     for (const signal of cycleSignals) {
-      const decision = risk.evaluate(signal, state, snapshot);
+      const decision = risk.evaluate(signal, state, enrichedSnapshot);
       metrics.recordApproval(decision.approved);
       if (!decision.approved) continue;
 
@@ -39,7 +46,7 @@ export async function runBacktest(config: BotConfig, snapshots: MarketSnapshot[]
       };
     }
 
-    previous = snapshot;
+    previous = enrichedSnapshot;
   }
 
   const lastSnapshot = snapshots[snapshots.length - 1];

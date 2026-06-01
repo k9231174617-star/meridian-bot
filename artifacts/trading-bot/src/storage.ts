@@ -123,6 +123,7 @@ export async function createStorage(databaseUrl?: string, options?: { storageDir
       },
       async saveIntent(intent) {
         await db.insert(schema.botTradeIntentsTable).values({
+          intentId: intent.id,
           signalId: intent.signalId,
           signalType: intent.signalType,
           action: intent.action,
@@ -134,10 +135,15 @@ export async function createStorage(databaseUrl?: string, options?: { storageDir
           priorityFeeMicroLamports: intent.priorityFeeMicroLamports,
           status: "created",
           payload: intent,
-        }).onConflictDoNothing({ target: schema.botTradeIntentsTable.signalId });
+        }).onConflictDoNothing({ target: schema.botTradeIntentsTable.intentId });
       },
       async loadIntent(signalId) {
-        const rows = await db.select().from(schema.botTradeIntentsTable).where(eq(schema.botTradeIntentsTable.signalId, signalId)).limit(1);
+        const rows = await db
+          .select()
+          .from(schema.botTradeIntentsTable)
+          .where(eq(schema.botTradeIntentsTable.signalId, signalId))
+          .orderBy(desc(schema.botTradeIntentsTable.createdAt))
+          .limit(1);
         const row = rows[0];
         if (!row) return null;
         return row.payload as TradeIntent;

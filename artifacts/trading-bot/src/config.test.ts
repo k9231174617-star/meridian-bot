@@ -45,6 +45,11 @@ test("config exposes pool age and verification flags", () => {
     BOT_PAPER_MAX_CYCLES: "7",
     BOT_PAPER_DEBUG_FORCE_SIGNAL: "true",
     BOT_PAPER_DEBUG_BYPASS_RISK: "true",
+    BOT_MIN_DEGEN_SCORE: "42",
+    BOT_MIN_SOCIAL_VELOCITY_SCORE: "61",
+    BOT_MAX_PREVIOUS_RUGS_BY_DEV: "2",
+    BOT_MAX_WHALE_PRESSURE_SCORE: "55",
+    BOT_SPLIT_POSITION_COUNT: "9",
   });
 
   assert.equal(config.risk.maxPoolAgeHours, 24);
@@ -52,4 +57,9 @@ test("config exposes pool age and verification flags", () => {
   assert.equal(config.paperMaxCycles, 7);
   assert.equal(config.paperDebugForceSignal, true);
   assert.equal(config.paperDebugBypassRisk, true);
+  assert.equal(config.meme.minDegenScore, 42);
+  assert.equal(config.meme.minSocialVelocityScore, 61);
+  assert.equal(config.meme.maxPreviousRugsByDev, 2);
+  assert.equal(config.meme.maxWhalePressureScore, 55);
+  assert.equal(config.meme.splitPositionCount, 9);
 });

@@ -8,6 +8,10 @@
 - `BOT_PAPER_DEBUG_BYPASS_RISK=true`
 - `BOT_PROVIDER=direct`
 - `BOT_RPC_URL`
+- `RPC_URL` or `WS_URL` as aliases when the environment already standardizes
+  those names
+- `YELLOWSTONE_ENDPOINT`
+- `YELLOWSTONE_TOKEN`
 - One of:
   - `BOT_SIGNER_SECRET_KEY`
   - `BOT_SIGNER_SECRET_KEY_FILE`
@@ -33,6 +37,13 @@
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`
 - `BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT`
+- `BOT_MIN_DEGEN_SCORE`
+- `BOT_MIN_SOCIAL_VELOCITY_SCORE`
+- `BOT_MAX_PREVIOUS_RUGS_BY_DEV`
+- `BOT_MAX_WHALE_PRESSURE_SCORE`
+- `BOT_SPLIT_POSITION_COUNT`
+- optional `BOT_MEME_SOCIAL_API_URL`
+- optional `BOT_MEME_EVENT_API_URL`
 - allow/deny list variables
 - `GET /metrics` for Prometheus-style scraping and uptime checks
 

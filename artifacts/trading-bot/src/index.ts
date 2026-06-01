@@ -1,6 +1,7 @@
 export * from "./domain.js";
 export * from "./config.js";
 export * from "./market-data.js";
+export * from "./meme-intel.js";
 export * from "./signals.js";
 export * from "./risk.js";
 export * from "./execution.js";

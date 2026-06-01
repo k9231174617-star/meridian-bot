@@ -36,6 +36,7 @@ export const botSignalsTable = pgTable("bot_signals", {
 
 export const botTradeIntentsTable = pgTable("bot_trade_intents", {
   id: serial("id").primaryKey(),
+  intentId: text("intent_id").notNull(),
   signalId: text("signal_id").notNull(),
   signalType: text("signal_type").notNull(),
   action: text("action").notNull(),
@@ -49,7 +50,7 @@ export const botTradeIntentsTable = pgTable("bot_trade_intents", {
   payload: jsonb("payload").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  signalIdIdx: uniqueIndex("bot_trade_intents_signal_id_idx").on(table.signalId),
+  intentIdIdx: uniqueIndex("bot_trade_intents_intent_id_idx").on(table.intentId),
 }));
 
 export const botPositionsTable = pgTable(

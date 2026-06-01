@@ -69,7 +69,7 @@ export class JupiterSwapExecutionClient implements ExecutionClient {
   ) {}
 
   async execute(intent: TradeIntent): Promise<ExecutionResult> {
-    if (intent.action === "SWAP") {
+    if (intent.action === "SWAP" || intent.action === "HEDGE") {
       return this.executeSwap(intent);
     }
 
@@ -87,9 +87,11 @@ export class JupiterSwapExecutionClient implements ExecutionClient {
       ...command,
       simulateHoneypot: this.options.enableHoneypotSimulation ?? true,
       maxHoneypotLossBps: this.options.maxHoneypotLossBps ?? 150,
-      useJito: this.options.useJito ?? false,
+      useJito: (this.options.useJito ?? false) || intent.executionHints?.priorityProtection === "MAX",
       jitoBlockEngineUrl: this.options.jitoBlockEngineUrl,
-      jitoTipLamports: this.options.jitoTipLamports,
+      jitoTipLamports: intent.executionHints?.priorityProtection === "MAX"
+        ? Math.max(this.options.jitoTipLamports ?? 0, 10_000)
+        : this.options.jitoTipLamports,
       jitoDontFrontTag: this.options.jitoDontFrontTag,
     });
 
@@ -284,7 +286,7 @@ function buildSwapCommand(intent: TradeIntent, wallet: PublicKey): ExecutionComm
       extra: {},
     },
     inputMint: toMint(intent.symbolIn ?? "SOL"),
-    outputMint: toMint(intent.symbolOut ?? "USDC"),
+    outputMint: toMint(intent.symbolOut ?? intent.executionHints?.hedgeTo ?? "USDC"),
     amountIn: Math.max(1, Math.round(intent.amountUsd * 1_000_000)),
     slippageBps: intent.slippageBps,
     priorityFeeMicrolamports: intent.priorityFeeMicroLamports,

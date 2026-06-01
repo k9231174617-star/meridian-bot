@@ -68,6 +68,9 @@ an explicit remote API endpoint.
   `BOT_SIGNER_SECRET_KEY_FILE`. A remote secret endpoint can also be used via
   `BOT_SIGNER_SECRET_REMOTE_URL` and `BOT_SIGNER_SECRET_REMOTE_TOKEN` when the
   signer is backed by Vault or another secret service. Optional
+  aliases `RPC_URL`, `WS_URL`, `YELLOWSTONE_ENDPOINT`, and
+  `YELLOWSTONE_TOKEN` are also accepted, with lowercase yellowstone aliases
+  supported for compatibility with external secret stores. Optional
   `BOT_ALERT_WEBHOOK_URL` enables external alerts for failures and
   circuit-breaker events. The bot also supports pool and token allow/deny lists,
   a pool-age gate, optional pool-metadata verification, a price-dislocation
@@ -89,6 +92,11 @@ an explicit remote API endpoint.
   top-10 holder concentration, mint/freezer authority state, and risk score.
 - `BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT` tightens the holder-distribution gate for
   concentrated token supplies.
+- Memecoin-specific scoring now adds `BOT_MIN_DEGEN_SCORE`,
+  `BOT_MIN_SOCIAL_VELOCITY_SCORE`, `BOT_MAX_PREVIOUS_RUGS_BY_DEV`,
+  `BOT_MAX_WHALE_PRESSURE_SCORE`, and `BOT_SPLIT_POSITION_COUNT`, plus optional
+  `BOT_MEME_SOCIAL_API_URL` / `BOT_MEME_EVENT_API_URL` enrichers for social and
+  event windows.
 - A websocket pool watcher can be enabled with `BOT_ENABLE_WSS_POOL_WATCHER=true`
   plus `BOT_RPC_WS_URL` to surface logs that look like new pool or launch
   events before the next polling cycle.

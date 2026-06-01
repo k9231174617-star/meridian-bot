@@ -10,6 +10,11 @@ export type HardenedRiskPolicy = RiskPolicy & {
   maxTopHolderSharePct: number;
   maxTopTenHolderSharePct: number;
   maxRugRiskScore: number;
+  minDegenScore: number;
+  minSocialVelocityScore: number;
+  maxPreviousRugsByDev: number;
+  maxWhalePressureScore: number;
+  splitPositionCount: number;
 };
 
 const configSchema = z.object({
@@ -33,6 +38,11 @@ const configSchema = z.object({
   BOT_MAX_TOP_HOLDER_SHARE_PCT: z.coerce.number().min(0).max(100).default(80),
   BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT: z.coerce.number().min(0).max(100).default(95),
   BOT_MAX_RUG_RISK_SCORE: z.coerce.number().int().min(0).max(100).default(70),
+  BOT_MIN_DEGEN_SCORE: z.coerce.number().min(0).max(100).default(30),
+  BOT_MIN_SOCIAL_VELOCITY_SCORE: z.coerce.number().min(0).max(100).default(55),
+  BOT_MAX_PREVIOUS_RUGS_BY_DEV: z.coerce.number().int().min(0).default(3),
+  BOT_MAX_WHALE_PRESSURE_SCORE: z.coerce.number().min(0).max(100).default(70),
+  BOT_SPLIT_POSITION_COUNT: z.coerce.number().int().min(1).max(20).default(8),
   BOT_CIRCUIT_BREAKER_FAILURES: z.coerce.number().int().positive().default(3),
   BOT_CIRCUIT_BREAKER_COOLDOWN_MS: z.coerce.number().int().positive().default(15 * 60_000),
   BOT_USE_JITO: booleanFromEnv().default(false),
@@ -44,6 +54,8 @@ const configSchema = z.object({
   BOT_ENABLE_ANTI_SCAM: booleanFromEnv().default(true),
   BOT_RUGCHECK_API_URL: z.string().optional(),
   BOT_RUGCHECK_API_KEY: z.string().optional(),
+  BOT_MEME_SOCIAL_API_URL: z.string().optional(),
+  BOT_MEME_EVENT_API_URL: z.string().optional(),
   BOT_ENABLE_RETRY_QUEUE: booleanFromEnv().default(true),
   BOT_RETRY_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
   BOT_RETRY_BACKOFF_MS: z.string().default("1000,3000,10000"),
@@ -56,6 +68,14 @@ const configSchema = z.object({
   BOT_DENIED_TOKENS: z.string().default(""),
   BOT_RPC_URL: z.string().optional(),
   BOT_RPC_WS_URL: z.string().optional(),
+  RPC_URL: z.string().optional(),
+  WS_URL: z.string().optional(),
+  YELLOWSTONE_ENDPOINT: z.string().optional(),
+  YELLOWSTONE_TOKEN: z.string().optional(),
+  rpc_url: z.string().optional(),
+  ws_url: z.string().optional(),
+  yellowstone_endpoint: z.string().optional(),
+  yellowstone_token: z.string().optional(),
   BOT_SIGNER_SECRET_KEY: z.string().optional(),
   BOT_SIGNER_SECRET_KEY_FILE: z.string().optional(),
   BOT_SIGNER_SECRET_REMOTE_URL: z.string().optional(),
@@ -112,8 +132,19 @@ export type BotConfig = {
   retryMaxAttempts: number;
   retryBackoffMs: number[];
   risk: HardenedRiskPolicy;
+  meme: {
+    socialApiUrl?: string;
+    eventApiUrl?: string;
+    minDegenScore: number;
+    minSocialVelocityScore: number;
+    maxPreviousRugsByDev: number;
+    maxWhalePressureScore: number;
+    splitPositionCount: number;
+  };
   rpcUrl?: string;
   rpcWsUrl?: string;
+  yellowstoneEndpoint?: string;
+  yellowstoneToken?: string;
   signerSecretKey?: string;
   signerSecretKeyFile?: string;
   signerSecretRemoteUrl?: string;
@@ -148,6 +179,11 @@ export function loadConfig(env = process.env): BotConfig {
     maxTopHolderSharePct: parsed.BOT_MAX_TOP_HOLDER_SHARE_PCT,
     maxTopTenHolderSharePct: parsed.BOT_MAX_TOP_TEN_HOLDER_SHARE_PCT,
     maxRugRiskScore: parsed.BOT_MAX_RUG_RISK_SCORE,
+    minDegenScore: parsed.BOT_MIN_DEGEN_SCORE,
+    minSocialVelocityScore: parsed.BOT_MIN_SOCIAL_VELOCITY_SCORE,
+    maxPreviousRugsByDev: parsed.BOT_MAX_PREVIOUS_RUGS_BY_DEV,
+    maxWhalePressureScore: parsed.BOT_MAX_WHALE_PRESSURE_SCORE,
+    splitPositionCount: parsed.BOT_SPLIT_POSITION_COUNT,
     poolAllowlist: allowedPools,
     poolDenylist: deniedPools,
     tokenAllowlist: allowedTokens,
@@ -176,13 +212,24 @@ export function loadConfig(env = process.env): BotConfig {
     enableAntiScam: parsed.BOT_ENABLE_ANTI_SCAM,
     rugcheckApiUrl: parsed.BOT_RUGCHECK_API_URL,
     rugcheckApiKey: parsed.BOT_RUGCHECK_API_KEY,
+    meme: {
+      socialApiUrl: parsed.BOT_MEME_SOCIAL_API_URL,
+      eventApiUrl: parsed.BOT_MEME_EVENT_API_URL,
+      minDegenScore: parsed.BOT_MIN_DEGEN_SCORE,
+      minSocialVelocityScore: parsed.BOT_MIN_SOCIAL_VELOCITY_SCORE,
+      maxPreviousRugsByDev: parsed.BOT_MAX_PREVIOUS_RUGS_BY_DEV,
+      maxWhalePressureScore: parsed.BOT_MAX_WHALE_PRESSURE_SCORE,
+      splitPositionCount: parsed.BOT_SPLIT_POSITION_COUNT,
+    },
     enableRetryQueue: parsed.BOT_ENABLE_RETRY_QUEUE,
     retryMaxAttempts: parsed.BOT_RETRY_MAX_ATTEMPTS,
     retryBackoffMs: parseCsvList(parsed.BOT_RETRY_BACKOFF_MS)
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value) && value > 0),
-    rpcUrl: parsed.BOT_RPC_URL,
-    rpcWsUrl: parsed.BOT_RPC_WS_URL,
+    rpcUrl: parsed.BOT_RPC_URL ?? parsed.RPC_URL ?? parsed.rpc_url,
+    rpcWsUrl: parsed.BOT_RPC_WS_URL ?? parsed.WS_URL ?? parsed.ws_url,
+    yellowstoneEndpoint: parsed.YELLOWSTONE_ENDPOINT ?? parsed.yellowstone_endpoint,
+    yellowstoneToken: parsed.YELLOWSTONE_TOKEN ?? parsed.yellowstone_token,
     signerSecretKey: parsed.BOT_SIGNER_SECRET_KEY,
     signerSecretKeyFile: parsed.BOT_SIGNER_SECRET_KEY_FILE,
     signerSecretRemoteUrl: parsed.BOT_SIGNER_SECRET_REMOTE_URL,

@@ -9,6 +9,7 @@ import { BotMetrics } from "./observability.js";
 import { createAlertSink } from "./alerts.js";
 import { TokenSafetyInspector } from "./security.js";
 import { PoolWatcher } from "./pool-watcher.js";
+import { MemeIntelService } from "./meme-intel.js";
 import type { BotMode, MarketSnapshot, RetryJob, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
@@ -41,10 +42,14 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
 
   const storage = await createStorage(config.databaseUrl, { storageDir: config.storageDir });
   const alertSink = createAlertSink(config.alertWebhookUrl);
-  const signals = new SignalEngine();
+  const signals = new SignalEngine(config.meme);
   const risk = new RiskEngine(config.risk);
   const executor = await buildExecutor(config);
   const metrics = new BotMetrics();
+  const memeIntel = new MemeIntelService({
+    socialApiUrl: config.meme.socialApiUrl,
+    eventApiUrl: config.meme.eventApiUrl,
+  });
   const poolWatcher = new PoolWatcher({
     enabled: config.enableWssPoolWatcher,
     rpcUrl: config.rpcUrl,
@@ -101,6 +106,18 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
               createdAt: new Date().toISOString(),
             });
           }
+        }
+        try {
+          snapshot = await memeIntel.enrichSnapshot(snapshot);
+        } catch (error) {
+          metrics.log("meme_intel_failed", { cycle: cycles, error: serializeError(error) });
+          await emitAlert({
+            severity: "warning",
+            title: "Memecoin intel enrichment failed",
+            message: "The bot could not complete meme-specific enrichment for this snapshot.",
+            context: { cycle: cycles, error: serializeError(error) },
+            createdAt: new Date().toISOString(),
+          });
         }
         metrics.recordSnapshot(snapshot.capturedAt);
         state = { ...state, consecutiveFailures: 0, lastSnapshotAt: snapshot.capturedAt, lastBreakerReason: undefined };
@@ -238,54 +255,78 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
           continue;
         }
 
-        if (storage) await storage.saveIntent(intent);
-        try {
-          const result = await executor.execute(intent);
-          metrics.recordExecution(result);
-          if (storage) await storage.saveExecution(result);
-          metrics.log("execution", { signalId: signal.id, intentId: intent.id, status: result.status, reason: result.reason });
-          if (typeof signal.impermanentLossPct === "number" && signal.action !== "SWAP") {
-            metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (signal.impermanentLossPct / 100));
-          }
-
-          if (result.status === "rejected" || result.status === "failed") {
+        const executionPlan = buildExecutionPlan(intent, signal.executionHints, config.risk.maxConcurrentIntents);
+        for (const slice of executionPlan) {
+          if (executedThisCycle >= config.risk.maxConcurrentIntents) {
+            const message = "Max concurrent intents reached for this cycle";
+            metrics.log("intents_skipped", { cycle: cycles, signalId: signal.id, reason: message });
             await emitAlert({
-              severity: result.status === "failed" ? "critical" : "warning",
-              title: "Execution did not complete",
-              message: result.reason ?? "Execution returned non-filled status",
-              context: { signalId: signal.id, intentId: intent.id, status: result.status },
+              severity: "warning",
+              title: "Intent limit reached",
+              message,
+              context: { cycle: cycles, signalId: signal.id, limit: config.risk.maxConcurrentIntents },
               createdAt: new Date().toISOString(),
             });
+            break;
           }
 
-          state = {
-            ...state,
-            openExposureUsd: Math.max(0, state.openExposureUsd + result.filledUsd - result.feesUsd),
-          };
-          seenSignalIds.add(signal.id);
-          executedThisCycle += 1;
-        } catch (error) {
-          state = {
-            ...state,
-            consecutiveFailures: state.consecutiveFailures + 1,
-            circuitBreakerUntil: new Date(Date.now() + config.risk.circuitBreakerCooldownMs).toISOString(),
-            lastBreakerReason: "execution failure",
-          };
-          metrics.log("execution_failed", { signalId: signal.id, intentId: intent.id, error: serializeError(error) });
-          await emitAlert({
-            severity: "critical",
-            title: "Execution failed",
-            message: "An execution attempt threw an error.",
-            context: { signalId: signal.id, intentId: intent.id, error: serializeError(error) },
-            createdAt: new Date().toISOString(),
-          });
+          if (storage) await storage.saveIntent(slice);
 
-          if (storage && config.enableRetryQueue && config.mode === "live") {
-            const retryJob = buildRetryJob(intent, serializeError(error), retryBackoffMs);
-            await storage.saveRetryJob(retryJob);
-            metrics.log("retry_queued", { jobId: retryJob.id, signalId: signal.id, attempts: retryJob.attempts, nextAttemptAt: retryJob.nextAttemptAt });
+          const delayMs = randomDelayMs(signal.executionHints?.minDelayMs, signal.executionHints?.maxDelayMs);
+          if (delayMs > 0) {
+            metrics.log("execution_delay", { signalId: signal.id, intentId: slice.id, delayMs });
+            await sleep(delayMs);
+          }
+
+          try {
+            const result = await executor.execute(slice);
+            metrics.recordExecution(result);
+            if (storage) await storage.saveExecution(result);
+            metrics.log("execution", { signalId: signal.id, intentId: slice.id, status: result.status, reason: result.reason });
+            if (typeof signal.impermanentLossPct === "number" && signal.action !== "SWAP") {
+              metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (signal.impermanentLossPct / 100));
+            }
+
+            if (result.status === "rejected" || result.status === "failed") {
+              await emitAlert({
+                severity: result.status === "failed" ? "critical" : "warning",
+                title: "Execution did not complete",
+                message: result.reason ?? "Execution returned non-filled status",
+                context: { signalId: signal.id, intentId: slice.id, status: result.status },
+                createdAt: new Date().toISOString(),
+              });
+            }
+
+            state = {
+              ...state,
+              openExposureUsd: Math.max(0, state.openExposureUsd + result.filledUsd - result.feesUsd),
+            };
+            executedThisCycle += 1;
+          } catch (error) {
+            state = {
+              ...state,
+              consecutiveFailures: state.consecutiveFailures + 1,
+              circuitBreakerUntil: new Date(Date.now() + config.risk.circuitBreakerCooldownMs).toISOString(),
+              lastBreakerReason: "execution failure",
+            };
+            metrics.log("execution_failed", { signalId: signal.id, intentId: slice.id, error: serializeError(error) });
+            await emitAlert({
+              severity: "critical",
+              title: "Execution failed",
+              message: "An execution attempt threw an error.",
+              context: { signalId: signal.id, intentId: slice.id, error: serializeError(error) },
+              createdAt: new Date().toISOString(),
+            });
+
+            if (storage && config.enableRetryQueue && config.mode === "live") {
+              const retryJob = buildRetryJob(slice, serializeError(error), retryBackoffMs);
+              await storage.saveRetryJob(retryJob);
+              metrics.log("retry_queued", { jobId: retryJob.id, signalId: signal.id, attempts: retryJob.attempts, nextAttemptAt: retryJob.nextAttemptAt });
+            }
           }
         }
+
+        seenSignalIds.add(signal.id);
       }
 
       previous = snapshot;
@@ -353,6 +394,40 @@ function buildPaperDebugSignal(snapshot: MarketSnapshot, cycle: number, provider
     priorityFeeMicroLamports: 2_500,
     createdAt: snapshot.capturedAt,
   };
+}
+
+function buildExecutionPlan(
+  intent: TradeIntent,
+  executionHints?: {
+    splitCount?: number;
+    minDelayMs?: number;
+    maxDelayMs?: number;
+  },
+  maxSlices = 1,
+) {
+  const splitCount = clampInt(Math.min(executionHints?.splitCount ?? 1, maxSlices), 1, 20);
+  if (splitCount <= 1 || intent.amountUsd <= 0) return [intent];
+
+  const baseAmount = round2(intent.amountUsd / splitCount);
+  const amounts = Array.from({ length: splitCount }, (_, index) => {
+    if (index === splitCount - 1) {
+      return round2(intent.amountUsd - baseAmount * (splitCount - 1));
+    }
+    return baseAmount;
+  });
+
+  return amounts.map((amountUsd, index) => ({
+    ...intent,
+    id: createDerivedIntentId(intent.id, index),
+    amountUsd,
+    executionHints: {
+      ...intent.executionHints,
+      splitCount: 1,
+      minDelayMs: executionHints?.minDelayMs,
+      maxDelayMs: executionHints?.maxDelayMs,
+    },
+    createdAt: new Date().toISOString(),
+  }));
 }
 
 async function buildExecutor(config: ReturnType<typeof loadConfig>) {
@@ -453,6 +528,22 @@ function bumpRetryJob(job: RetryJob, error: ReturnType<typeof serializeError>, r
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function randomDelayMs(minDelayMs?: number, maxDelayMs?: number) {
+  if (typeof minDelayMs !== "number" && typeof maxDelayMs !== "number") return 0;
+  const min = Math.max(0, minDelayMs ?? 0);
+  const max = Math.max(min, maxDelayMs ?? min);
+  if (max <= 0) return 0;
+  return Math.round(min + Math.random() * (max - min));
+}
+
+function createDerivedIntentId(parentIntentId: string, sliceIndex: number) {
+  return `slice_${createHash("sha256").update(`${parentIntentId}:${sliceIndex}`).digest("hex").slice(0, 24)}`;
+}
+
+function clampInt(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(value)));
 }
 
 function serializeError(error: unknown) {
