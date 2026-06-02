@@ -63,6 +63,7 @@ export async function loadRecentSignals(storageDir = resolveStorageDir(), limit 
   const signals = records
     .filter((record): record is SignalRecord => record.kind === "signal")
     .map((record) => record.signal)
+    .filter((signal) => !isDemoSignal(signal))
     .reduce<RecentSignalRecord[]>((acc, signal) => {
       const existingIndex = acc.findIndex((entry) => entry.id === signal.id);
       if (existingIndex >= 0) {
@@ -85,6 +86,12 @@ export async function loadRecentSignals(storageDir = resolveStorageDir(), limit 
     counts,
     signals,
   };
+}
+
+function isDemoSignal(signal: RecentSignalRecord): boolean {
+  const poolName = signal.poolName.trim().toUpperCase();
+  const poolAddress = signal.poolAddress.trim().toUpperCase();
+  return signal.id.startsWith("demo-") || poolName.includes("UI TEST / MERIDIAN") || poolAddress.startsWith("DEMO");
 }
 
 async function readSignalRecords(storageDir: string) {

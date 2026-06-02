@@ -13,7 +13,7 @@
     "bot:live": "pnpm --filter @workspace/trading-bot run live",
     "bot:backtest": "pnpm --filter @workspace/trading-bot run backtest",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "start": "pnpm --filter @workspace/api-server run start",
+    "start": "bash ./scripts/start-prod.sh",
     "test": "pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run test",
     "smoke": "pnpm --filter @workspace/scripts run smoke",
     "typecheck:libs": "tsc --build",
