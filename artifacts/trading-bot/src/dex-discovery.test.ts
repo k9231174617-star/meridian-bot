@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PublicKey } from "@solana/web3.js";
-import { discoverRecentProgramCandidates, programIdsForDex } from "./dex-discovery.js";
+import { defaultDiscoverySettings, discoverRecentProgramCandidates, programIdsForDex } from "./dex-discovery.js";
 
 test("discoverRecentProgramCandidates filters program signatures into dex candidates", async () => {
   const programId = programIdsForDex("raydium")[0];
@@ -34,4 +34,9 @@ test("discoverRecentProgramCandidates filters program signatures into dex candid
   assert.equal(discovery.candidates[0].source, "rpc-account");
   assert.equal(discovery.candidates[0].signature, "sig-1");
   assert.equal(discovery.observations[0].status, "accepted");
+});
+
+test("defaultDiscoverySettings respects an explicit empty dex list", () => {
+  const settings = defaultDiscoverySettings([]);
+  assert.deepEqual(settings.enabledDexes, []);
 });

@@ -125,6 +125,13 @@ test("pools endpoint merges discovery candidates when dexes are enabled", { conc
               signalSeed: "WATCH",
               currentPrice: 0,
               activeBinId: 0,
+              tokenSafetyScore: 18,
+              rugRiskScore: 82,
+              degenScore: 61,
+              socialVelocityScore: 77,
+              whalePressureScore: 79,
+              eventWindowActive: true,
+              eventName: "Narrative breakout",
             },
           },
         }),
@@ -148,11 +155,14 @@ test("pools endpoint merges discovery candidates when dexes are enabled", { conc
       const response = await originalFetch(`${baseUrl}/api/pools?limit=5&minTvl=100000&minJupScore=0`);
       assert.equal(response.status, 200);
       const body = (await response.json()) as {
-        pools: Array<{ address: string; name: string }>;
+        pools: Array<{ address: string; name: string; rugRiskScore?: number; degenScore?: number; eventWindowActive?: boolean }>;
         total: number;
       };
       assert.equal(body.total, 1);
       assert.equal(body.pools[0]?.address, "discovery-raydium-def");
+      assert.equal(body.pools[0]?.rugRiskScore, 82);
+      assert.equal(body.pools[0]?.degenScore, 61);
+      assert.equal(body.pools[0]?.eventWindowActive, true);
     });
   } finally {
     globalThis.fetch = originalFetch;

@@ -43,6 +43,28 @@ export interface Pool {
   signalType: PoolSignalType;
   currentPrice: number;
   activeBinId: number;
+  dex?: "meteora" | "raydium" | "orca";
+  discoveryConfidence?: number;
+  discoverySource?: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "rpc-account" | "fallback";
+  discoverySignature?: string;
+  isDiscoveryCandidate?: boolean;
+  tokenSafetyScore?: number;
+  rugRiskScore?: number;
+  degenScore?: number;
+  holderGini?: number;
+  devWalletAgeDays?: number;
+  previousRugsByDev?: number;
+  contractRiskScore?: number;
+  bondingCurveProgressPct?: number;
+  migrateTarget?: "RAYDIUM" | "ORCA" | "METEORA" | "UNKNOWN";
+  socialVelocityScore?: number;
+  socialVelocityDelta?: number;
+  whaleFlowBps?: number;
+  whalePressureScore?: number;
+  fdvUsd?: number;
+  eventWindowActive?: boolean;
+  eventName?: string;
+  eventBlocksRemaining?: number;
 }
 
 export interface PoolListResponse {

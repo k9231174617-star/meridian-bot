@@ -183,6 +183,53 @@ components:
           type: number
         activeBinId:
           type: integer
+        dex:
+          type: string
+          enum: [meteora, raydium, orca]
+        discoveryConfidence:
+          type: number
+        discoverySource:
+          type: string
+          enum: [meteora-api, wss-log, wss-program, rpc-recent, rpc-account, fallback]
+        discoverySignature:
+          type: string
+        isDiscoveryCandidate:
+          type: boolean
+        tokenSafetyScore:
+          type: number
+        rugRiskScore:
+          type: number
+        degenScore:
+          type: number
+        holderGini:
+          type: number
+        devWalletAgeDays:
+          type: number
+        previousRugsByDev:
+          type: number
+        contractRiskScore:
+          type: number
+        bondingCurveProgressPct:
+          type: number
+        migrateTarget:
+          type: string
+          enum: [RAYDIUM, ORCA, METEORA, UNKNOWN]
+        socialVelocityScore:
+          type: number
+        socialVelocityDelta:
+          type: number
+        whaleFlowBps:
+          type: number
+        whalePressureScore:
+          type: number
+        fdvUsd:
+          type: number
+        eventWindowActive:
+          type: boolean
+        eventName:
+          type: string
+        eventBlocksRemaining:
+          type: number
       required:
         - address
         - name

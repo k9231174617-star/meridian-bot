@@ -73,6 +73,23 @@ function snapshotToApiPool(pool: any): PoolRecord {
     ...(pool.discoverySource ? { discoverySource: pool.discoverySource } : {}),
     ...(pool.discoverySignature ? { discoverySignature: pool.discoverySignature } : {}),
     ...(pool.isDiscoveryCandidate !== undefined ? { isDiscoveryCandidate: pool.isDiscoveryCandidate } : {}),
+    ...(typeof pool.tokenSafetyScore === "number" ? { tokenSafetyScore: pool.tokenSafetyScore } : {}),
+    ...(typeof pool.rugRiskScore === "number" ? { rugRiskScore: pool.rugRiskScore } : {}),
+    ...(typeof pool.degenScore === "number" ? { degenScore: pool.degenScore } : {}),
+    ...(typeof pool.holderGini === "number" ? { holderGini: pool.holderGini } : {}),
+    ...(typeof pool.devWalletAgeDays === "number" ? { devWalletAgeDays: pool.devWalletAgeDays } : {}),
+    ...(typeof pool.previousRugsByDev === "number" ? { previousRugsByDev: pool.previousRugsByDev } : {}),
+    ...(typeof pool.contractRiskScore === "number" ? { contractRiskScore: pool.contractRiskScore } : {}),
+    ...(typeof pool.bondingCurveProgressPct === "number" ? { bondingCurveProgressPct: pool.bondingCurveProgressPct } : {}),
+    ...(pool.migrateTarget ? { migrateTarget: pool.migrateTarget } : {}),
+    ...(typeof pool.socialVelocityScore === "number" ? { socialVelocityScore: pool.socialVelocityScore } : {}),
+    ...(typeof pool.socialVelocityDelta === "number" ? { socialVelocityDelta: pool.socialVelocityDelta } : {}),
+    ...(typeof pool.whaleFlowBps === "number" ? { whaleFlowBps: pool.whaleFlowBps } : {}),
+    ...(typeof pool.whalePressureScore === "number" ? { whalePressureScore: pool.whalePressureScore } : {}),
+    ...(typeof pool.fdvUsd === "number" ? { fdvUsd: pool.fdvUsd } : {}),
+    ...(typeof pool.eventWindowActive === "boolean" ? { eventWindowActive: pool.eventWindowActive } : {}),
+    ...(pool.eventName ? { eventName: pool.eventName } : {}),
+    ...(typeof pool.eventBlocksRemaining === "number" ? { eventBlocksRemaining: pool.eventBlocksRemaining } : {}),
   } as PoolRecord;
 }
 

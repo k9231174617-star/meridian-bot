@@ -48,8 +48,9 @@ type DiscoveryRecord =
   | { kind: "observation"; observation: DiscoveryObservation };
 
 export function defaultDiscoverySettings(enabledDexes?: SupportedDex[]): DiscoverySettings {
+  const fallbackDexes = enabledDexes ? [...new Set(enabledDexes)] : undefined;
   return {
-    enabledDexes: enabledDexes && enabledDexes.length > 0 ? [...new Set(enabledDexes)] : ["meteora", "raydium", "orca"],
+    enabledDexes: fallbackDexes ?? ["meteora", "raydium", "orca"],
     updatedAt: new Date().toISOString(),
   };
 }
