@@ -99,6 +99,7 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         ws_url: "",
         yellowstone_endpoint: "",
         yellowstone_token: "",
+        DATABASE_URL: "",
         ...(debug?.forceSignal ? { BOT_PAPER_DEBUG_FORCE_SIGNAL: "true" } : {}),
         ...(debug?.bypassRisk ? { BOT_PAPER_DEBUG_BYPASS_RISK: "true" } : {}),
       };
