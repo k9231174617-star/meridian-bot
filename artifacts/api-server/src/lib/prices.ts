@@ -1,20 +1,18 @@
 import type { PricesResponse } from "@workspace/api-zod";
+import { DEFAULT_BIRDEYE_PRICE_SYMBOLS, TOKEN_MINTS } from "@workspace/birdeye";
 
-export const DEFAULT_PRICE_TOKENS = ["SOL", "USDC", "JUP", "RAY", "BONK"];
-
-export const TOKEN_MINTS: Record<string, string> = {
-  SOL: "So11111111111111111111111111111111111111112",
-  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  JUP: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-  RAY: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
-  BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-};
+export const DEFAULT_PRICE_TOKENS = [...DEFAULT_BIRDEYE_PRICE_SYMBOLS];
+export { TOKEN_MINTS };
 
 export type JupiterPriceRecord = {
   price?: string | number;
+  value?: string | number;
   change24h?: string | number;
   price_change_24h?: string | number;
   percentChange24h?: string | number;
+  priceChange24hPercent?: string | number;
+  price_change_24h_percent?: string | number;
+  change_24h?: string | number;
   percent_change_24h?: string | number;
   usdPrice?: string | number;
   priceChange24h?: string | number;
@@ -62,7 +60,7 @@ function toNumber(value: unknown) {
 }
 
 function toPriceNumber(entry: JupiterPriceRecord | undefined) {
-  return toNumber(entry?.usdPrice ?? entry?.price);
+  return toNumber(entry?.usdPrice ?? entry?.price ?? (entry as { value?: string | number } | undefined)?.value);
 }
 
 function toChangeNumber(entry: JupiterPriceRecord | undefined) {
@@ -71,6 +69,9 @@ function toChangeNumber(entry: JupiterPriceRecord | undefined) {
       entry?.priceChange24h ??
         entry?.change24h ??
         entry?.percentChange24h ??
+        entry?.priceChange24hPercent ??
+        entry?.price_change_24h_percent ??
+        entry?.change_24h ??
         entry?.percent_change_24h ??
         entry?.price_change_24h,
     ) || 0

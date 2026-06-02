@@ -43,7 +43,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
 
   const provider = config.provider === "local-api"
     ? new LocalApiMarketDataProvider(config.marketDataBaseUrl)
-    : new DirectMarketDataProvider(25, 100_000, config.jupiterApiKey);
+    : new DirectMarketDataProvider(25, 100_000, config.jupiterApiKey, config.birdeyeApiKey);
   const safetyInspector = config.enableAntiScam && config.rpcUrl
     ? new TokenSafetyInspector({
       rpcUrl: config.rpcUrl,

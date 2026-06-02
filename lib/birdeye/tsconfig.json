@@ -1,19 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "composite": true,
     "outDir": "dist",
     "rootDir": "src",
     "types": ["node"],
     "moduleResolution": "node16",
     "module": "Node16"
   },
-  "include": ["src"],
-  "references": [
-    {
-      "path": "../../lib/db"
-    },
-    {
-      "path": "../../lib/birdeye"
-    }
-  ]
+  "include": ["src"]
 }

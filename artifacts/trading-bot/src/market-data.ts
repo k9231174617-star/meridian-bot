@@ -1,4 +1,13 @@
 import type { MarketSnapshot, PoolSnapshot, PriceSnapshot } from "./domain.js";
+import {
+  DEFAULT_BIRDEYE_PRICE_SYMBOLS,
+  fetchBirdeyeTokenList,
+  fetchBirdeyeTokenMarketData,
+  fetchBirdeyeTokenPrice,
+  getBirdeyeApiKey,
+  TOKEN_MINTS as BIRDEYE_TOKEN_MINTS,
+  type BirdeyeRecord,
+} from "@workspace/birdeye";
 
 export type MarketDataProvider = {
   fetchSnapshot(): Promise<MarketSnapshot>;
@@ -9,14 +18,7 @@ const JUPITER_PRICE_ENDPOINTS = [
   "https://lite-api.jup.ag/price/v3",
   "https://api.jup.ag/price/v2",
 ];
-const DEFAULT_TOKENS = ["SOL", "USDC", "JUP", "RAY", "BONK"];
-const TOKEN_MINTS: Record<string, string> = {
-  SOL: "So11111111111111111111111111111111111111112",
-  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  JUP: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-  RAY: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
-  BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-};
+const DEFAULT_TOKENS = [...DEFAULT_BIRDEYE_PRICE_SYMBOLS];
 const TOKEN_DECIMALS: Record<string, number> = {
   SOL: 9,
   USDC: 6,
@@ -29,6 +31,7 @@ export class DirectMarketDataProvider implements MarketDataProvider {
   constructor(
     private readonly limit = 25,
     private readonly minTvl = 100_000,
+    private readonly birdeyeApiKey?: string,
     private readonly jupiterApiKey?: string,
   ) {}
 
@@ -38,6 +41,24 @@ export class DirectMarketDataProvider implements MarketDataProvider {
   }
 
   private async fetchPools(): Promise<PoolSnapshot[]> {
+    try {
+      const records = await fetchBirdeyeTokenList({
+        limit: Math.max(this.limit * 2, this.limit),
+        minLiquidity: this.minTvl,
+        apiKey: this.birdeyeApiKey ?? getBirdeyeApiKey(),
+      });
+      const birdeyePools = records
+        .map((record) => normalizeBirdeyePool(record))
+        .filter((pool) => pool.tvlUsd >= this.minTvl)
+        .slice(0, this.limit);
+
+      if (birdeyePools.length > 0) {
+        return birdeyePools;
+      }
+    } catch {
+      // Fall through to Meteora fallback.
+    }
+
     try {
       const response = await fetch(`${METEORA_API}/pair/all?limit=100&sort_key=liquidity&order_by=desc`, {
         headers: { Accept: "application/json" },
@@ -54,18 +75,19 @@ export class DirectMarketDataProvider implements MarketDataProvider {
 
       if (pools.length > 0) return pools;
     } catch {
-      // Fall through to deterministic synthetic pools.
+      // Fall through to empty pool list.
     }
 
     return [];
   }
 
   private async fetchPrices(tokens: string[]): Promise<PriceSnapshot[]> {
-    const ids = tokens.map((token) => TOKEN_MINTS[token] ?? token).join(",");
-    const raw = await fetchPriceMap(ids, this.jupiterApiKey);
+    const birdeyePrices = await fetchBirdeyePriceMap(tokens, this.birdeyeApiKey ?? getBirdeyeApiKey());
+    const ids = tokens.map((token) => BIRDEYE_TOKEN_MINTS[token] ?? token).join(",");
+    const jupiterPrices = await fetchPriceMap(ids, this.jupiterApiKey);
     return tokens.map((symbol) => {
-      const mint = TOKEN_MINTS[symbol] ?? symbol;
-      const entry = raw[mint];
+      const mint = BIRDEYE_TOKEN_MINTS[symbol] ?? symbol;
+      const entry = birdeyePrices[mint] ?? jupiterPrices[mint];
       return {
         symbol,
         price: toPriceNumber(entry),
@@ -116,8 +138,8 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   const feeRatePct = tvlUsd > 0 ? (fee24hUsd / tvlUsd) * 100 : 0;
   const name = toString(record.name) || `${prefix(record.mint_x)}/${prefix(record.mint_y)}`;
   const [tokenX, tokenY] = splitPairName(name);
-  const tokenXMint = toString(record.mint_x ?? record.token_x_mint ?? record.tokenXMint) || TOKEN_MINTS[tokenX];
-  const tokenYMint = toString(record.mint_y ?? record.token_y_mint ?? record.tokenYMint) || TOKEN_MINTS[tokenY];
+  const tokenXMint = toString(record.mint_x ?? record.token_x_mint ?? record.tokenXMint) || BIRDEYE_TOKEN_MINTS[tokenX];
+  const tokenYMint = toString(record.mint_y ?? record.token_y_mint ?? record.tokenYMint) || BIRDEYE_TOKEN_MINTS[tokenY];
   const tokenXDecimals = toInteger(record.decimals_x ?? record.token_x_decimals ?? record.tokenXDecimals, fallbackDecimals(tokenX));
   const tokenYDecimals = toInteger(record.decimals_y ?? record.token_y_decimals ?? record.tokenYDecimals, fallbackDecimals(tokenY));
   const createdAt = toTimestamp(record.created_at ?? record.createdAt ?? record.pool_created_at ?? record.launch_time);
@@ -239,6 +261,131 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   };
 }
 
+function normalizeBirdeyePool(record: BirdeyeRecord): PoolSnapshot {
+  const address = toString(record.address ?? record.token_address ?? record.mint ?? record.id);
+  const symbol = toString(record.symbol ?? record.symbols ?? record.base_symbol ?? record.name ?? record.token_name);
+  const tokenX = symbol ? symbol.split("/")[0].trim().toUpperCase() : prefix(record.address);
+  const tokenY = "USDC";
+  const tvlUsd = toNumber(
+    record.liquidity ??
+      record.liquidity_usd ??
+      record.liquidityUsd ??
+      record.liquidity_usdt ??
+      record.total_liquidity,
+  );
+  const volume24hUsd = toNumber(
+    record.volume_24h_usd ??
+      record.volume24hUsd ??
+      record.volume ??
+      record.volume_24h ??
+      record.trade_volume_24h,
+  );
+  const price = toNumber(record.price ?? record.usd_price ?? record.current_price);
+  const fdvUsd = toOptionalNumber(record.fdv_usd ?? record.fdv ?? record.market_cap ?? record.marketCap) ?? estimateFdv(tvlUsd, volume24hUsd);
+  const fee24hUsd = toNumber(record.fees_24h ?? record.fee24h ?? record.fee_24h) || volume24hUsd * 0.003;
+  const feeRatePct = tvlUsd > 0 ? (fee24hUsd / tvlUsd) * 100 : 0;
+  const jupScore = computeJupScore(tvlUsd, volume24hUsd, feeRatePct, 10);
+  const smartMoneyScore = computeSmartMoneyScore(tvlUsd, volume24hUsd, feeRatePct);
+  const signalScore = Math.round(jupScore * 0.5 + smartMoneyScore * 0.3 + feeRatePct * 2);
+  const holderGini = toOptionalNumber(record.holder_gini ?? record.holderGini) ?? estimateHolderGini(
+    toOptionalNumber(record.top_holder_share_pct ?? record.topHolderSharePct),
+    toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct),
+  );
+  const devWalletAgeDays = toOptionalNumber(record.dev_wallet_age_days ?? record.devWalletAgeDays) ?? estimateDevWalletAgeDays(toString(record.created_at ?? record.createdAt));
+  const previousRugsByDev = toInteger(record.previous_rugs_by_dev ?? record.previousRugsByDev, 0);
+  const contractRiskScore = toOptionalNumber(record.contract_risk_score ?? record.contractRiskScore) ?? estimateContractRiskScore({
+    mintAuthorityRevoked: toOptionalBoolean(record.mint_authority_revoked ?? record.mintAuthorityRevoked),
+    freezeAuthorityRevoked: toOptionalBoolean(record.freeze_authority_revoked ?? record.freezeAuthorityRevoked),
+    liquidityLocked: toOptionalBoolean(record.liquidity_locked ?? record.liquidityLocked),
+    topTenHolderSharePct: toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct),
+    previousRugsByDev,
+  });
+  const socialVelocityScore = toOptionalNumber(record.social_velocity_score ?? record.socialVelocityScore) ?? estimateSocialVelocityScore({
+    tvlUsd,
+    volume24hUsd,
+    feeRatePct,
+    signalScore,
+    jupScore,
+    smartMoneyScore,
+  });
+  const whaleFlowBps = toOptionalNumber(record.whale_flow_bps ?? record.whaleFlowBps) ?? estimateWhaleFlowBps({
+    topHolderSharePct: toOptionalNumber(record.top_holder_share_pct ?? record.topHolderSharePct),
+    topTenHolderSharePct: toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct),
+    volume24hUsd,
+    tvlUsd,
+  });
+  const whalePressureScore = toOptionalNumber(record.whale_pressure_score ?? record.whalePressureScore) ?? estimateWhalePressureScore({
+    whaleFlowBps,
+    topTenHolderSharePct: toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct),
+    rugRiskScore: toOptionalNumber(record.rug_risk_score ?? record.rugRiskScore) ?? contractRiskScore,
+  });
+  const degenScore = toOptionalNumber(record.degen_score ?? record.degenScore) ?? estimateDegenScore({
+    tvlUsd,
+    fdvUsd,
+    holderGini,
+    devWalletAgeDays,
+    previousRugsByDev,
+    contractRiskScore,
+    socialVelocityScore,
+    whalePressureScore,
+  });
+
+  return {
+    address: address || `${tokenX}-${tokenY}`,
+    name: symbol ? `${symbol}-${tokenY}` : `${tokenX}-${tokenY}`,
+    tokenX,
+    tokenY,
+    tokenXMint: address || undefined,
+    tokenYMint: BIRDEYE_TOKEN_MINTS.USDC,
+    tokenXDecimals: toInteger(record.decimals ?? record.token_decimals ?? record.tokenDecimals, fallbackDecimals(tokenX)),
+    tokenYDecimals: 6,
+    createdAt: toTimestamp(record.created_at ?? record.createdAt ?? record.updated_at ?? record.updatedAt ?? record.recent_listing_time),
+    mintAuthorityRevoked: toOptionalBoolean(record.mint_authority_revoked ?? record.mintAuthorityRevoked),
+    freezeAuthorityRevoked: toOptionalBoolean(record.freeze_authority_revoked ?? record.freezeAuthorityRevoked),
+    liquidityLocked: toOptionalBoolean(record.liquidity_locked ?? record.liquidityLocked),
+    topHolderSharePct: toOptionalNumber(record.top_holder_share_pct ?? record.topHolderSharePct),
+    topTenHolderSharePct: toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct),
+    holderGini: round2(holderGini),
+    devWalletAgeDays: round2(devWalletAgeDays),
+    creatorAddress: toString(record.creator_address ?? record.creatorAddress ?? record.owner ?? record.creator) || undefined,
+    previousRugsByDev,
+    contractRiskScore: round2(contractRiskScore),
+    socialVelocityScore: round2(socialVelocityScore),
+    socialVelocityDelta: toOptionalNumber(record.social_velocity_delta ?? record.socialVelocityDelta),
+    whaleFlowBps: round2(whaleFlowBps),
+    whalePressureScore: round2(whalePressureScore),
+    fdvUsd: round2(fdvUsd),
+    eventWindowActive: toOptionalBoolean(record.event_window_active ?? record.eventWindowActive),
+    eventName: toString(record.event_name ?? record.eventName) || undefined,
+    eventBlocksRemaining: toOptionalNumber(record.event_blocks_remaining ?? record.eventBlocksRemaining)
+      ? Math.round(toOptionalNumber(record.event_blocks_remaining ?? record.eventBlocksRemaining) ?? 0)
+      : undefined,
+    topHolderWallets: toStringArray(record.top_holder_wallets ?? record.topHolderWallets ?? record.holder_wallets ?? record.holderWallets),
+    mevAttackCount: toOptionalNumber(record.mev_attack_count ?? record.mevAttackCount)
+      ? Math.max(0, Math.round(toOptionalNumber(record.mev_attack_count ?? record.mevAttackCount) ?? 0))
+      : undefined,
+    honeypotSimulationBps: toOptionalNumber(record.honeypot_simulation_bps ?? record.honeypotSimulationBps)
+      ? Math.max(0, round2(toOptionalNumber(record.honeypot_simulation_bps ?? record.honeypotSimulationBps) ?? 0))
+      : undefined,
+    rugRiskScore: toOptionalNumber(record.rug_risk_score ?? record.rugRiskScore),
+    tokenSafetyScore: toOptionalNumber(record.token_safety_score ?? record.tokenSafetyScore),
+    tvlUsd,
+    volume24hUsd,
+    fee24hUsd,
+    feeRatePct: round2(feeRatePct),
+    binStep: toInteger(record.bin_step ?? record.binStep, 10),
+    signalScore,
+    jupScore: Math.round(jupScore),
+    smartMoneyScore: Math.round(smartMoneyScore),
+    ilRisk: computeIlRisk(10, tokenX),
+    signalSeed: computeSignalSeed(signalScore),
+    currentPrice: price,
+    activeBinId: toInteger(record.active_id ?? record.activeBinId, 0),
+    degenScore: round2(degenScore),
+    discoverySource: "fallback",
+  };
+}
+
 function computeJupScore(tvl: number, vol: number, feeRate: number, binStep: number): number {
   let score = 0;
   if (tvl > 5_000_000) score += 30;
@@ -330,7 +477,7 @@ async function fetchPriceMap(ids: string, apiKey?: string): Promise<Record<strin
 function toPriceNumber(entry: unknown) {
   if (!entry || typeof entry !== "object") return 0;
   const record = entry as Record<string, unknown>;
-  return toNumber(record.usdPrice ?? record.price);
+  return toNumber(record.usdPrice ?? record.price ?? record.value);
 }
 
 function toChangeNumber(entry: unknown) {
@@ -340,9 +487,31 @@ function toChangeNumber(entry: unknown) {
     record.priceChange24h ??
       record.change24h ??
       record.percentChange24h ??
+      record.priceChange24hPercent ??
+      record.price_change_24h_percent ??
+      record.change_24h ??
       record.percent_change_24h ??
       record.price_change_24h,
   );
+}
+
+async function fetchBirdeyePriceMap(tokens: string[], apiKey?: string): Promise<Record<string, unknown>> {
+  const entries = await Promise.allSettled(
+    tokens.map(async (symbol) => {
+      const mint = BIRDEYE_TOKEN_MINTS[symbol] ?? symbol;
+      const record = await fetchBirdeyeTokenPrice(mint, apiKey).catch(() => fetchBirdeyeTokenMarketData(mint, apiKey));
+      return record ? [mint, record] as const : undefined;
+    }),
+  );
+
+  const map: Record<string, unknown> = {};
+  for (const entry of entries) {
+    if (entry.status === "fulfilled" && entry.value) {
+      const [mint, record] = entry.value;
+      map[mint] = record;
+    }
+  }
+  return map;
 }
 
 function toInteger(value: unknown, fallback: number) {
@@ -475,7 +644,22 @@ function fallbackDecimals(symbol: string) {
 }
 
 function toTimestamp(value: unknown) {
-  const date = new Date(String(value ?? ""));
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const millis = value < 10_000_000_000 ? value * 1000 : value;
+    const date = new Date(millis);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+  }
+
+  const text = String(value ?? "").trim();
+  if (!text) return undefined;
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) {
+    const millis = numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+    const date = new Date(millis);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+  }
+
+  const date = new Date(text);
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }
 

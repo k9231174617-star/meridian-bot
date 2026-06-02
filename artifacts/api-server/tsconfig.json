@@ -11,6 +11,9 @@
       "path": "../../lib/db"
     },
     {
+      "path": "../../lib/birdeye"
+    },
+    {
       "path": "../../lib/api-zod"
     }
   ]

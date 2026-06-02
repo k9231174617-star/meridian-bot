@@ -1,10 +1,15 @@
 import { Router } from "express";
 import { GetPricesQueryParams } from "@workspace/api-zod";
 import {
+  fetchBirdeyeTokenMarketData,
+  fetchBirdeyeTokenPrice,
+  getBirdeyeApiKey,
+  TOKEN_MINTS,
+} from "@workspace/birdeye";
+import {
   buildPriceResponse,
   DEFAULT_PRICE_TOKENS,
   normalizePriceTokens,
-  TOKEN_MINTS,
 } from "../lib/prices";
 
 const router = Router();
@@ -30,9 +35,10 @@ router.get("/", async (req, res) => {
     }
 
     const tokenList = normalizePriceTokens(query.tokens ?? DEFAULT_PRICE_TOKENS.join(","));
+    const birdeyeRaw = await fetchBirdeyePriceMap(tokenList, getBirdeyeApiKey());
     const ids = tokenList.map((t: string) => TOKEN_MINTS[t] || t).join(",");
-    const raw = await fetchPriceMap(ids);
-    const result = buildPriceResponse(tokenList, raw);
+    const jupiterRaw = await fetchPriceMap(ids);
+    const result = buildPriceResponse(tokenList, { ...jupiterRaw, ...birdeyeRaw });
 
     pricesCache.set(cacheKey, { data: result, ts: now });
     return res.json(result);
@@ -75,4 +81,23 @@ async function fetchPriceMap(ids: string) {
   }
 
   return {} as Record<string, unknown>;
+}
+
+async function fetchBirdeyePriceMap(tokens: string[], apiKey?: string) {
+  const entries = await Promise.allSettled(
+    tokens.map(async (symbol) => {
+      const mint = TOKEN_MINTS[symbol] ?? symbol;
+      const record = await fetchBirdeyeTokenPrice(mint, apiKey).catch(() => fetchBirdeyeTokenMarketData(mint, apiKey));
+      return record ? [mint, record] as const : undefined;
+    }),
+  );
+
+  const map: Record<string, unknown> = {};
+  for (const entry of entries) {
+    if (entry.status === "fulfilled" && entry.value) {
+      const [mint, record] = entry.value;
+      map[mint] = record;
+    }
+  }
+  return map;
 }

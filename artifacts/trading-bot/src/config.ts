@@ -82,6 +82,7 @@ const configSchema = z.object({
   BOT_SIGNER_SECRET_REMOTE_URL: z.string().optional(),
   BOT_SIGNER_SECRET_REMOTE_TOKEN: z.string().optional(),
   BOT_WALLET_ADDRESS: z.string().optional(),
+  BOT_BIRDEYE_API_KEY: z.string().optional(),
   BOT_JUPITER_API_KEY: z.string().optional(),
   BOT_ALERT_WEBHOOK_URL: z.string().optional(),
   BOT_STORAGE_DIR: z.string().optional(),
@@ -153,6 +154,7 @@ export type BotConfig = {
   signerSecretRemoteUrl?: string;
   signerSecretRemoteToken?: string;
   walletAddress?: string;
+  birdeyeApiKey?: string;
   jupiterApiKey?: string;
   alertWebhookUrl?: string;
   storageDir?: string;
@@ -240,6 +242,7 @@ export function loadConfig(env = process.env): BotConfig {
     signerSecretRemoteUrl: parsed.BOT_SIGNER_SECRET_REMOTE_URL,
     signerSecretRemoteToken: parsed.BOT_SIGNER_SECRET_REMOTE_TOKEN,
     walletAddress: parsed.BOT_WALLET_ADDRESS,
+    birdeyeApiKey: parsed.BOT_BIRDEYE_API_KEY,
     jupiterApiKey: parsed.BOT_JUPITER_API_KEY,
     alertWebhookUrl: parsed.BOT_ALERT_WEBHOOK_URL,
     storageDir: parsed.BOT_STORAGE_DIR,

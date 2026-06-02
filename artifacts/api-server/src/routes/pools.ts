@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { GetPoolsQueryParams, GetPoolParams, PoolSignalType, PoolIlRisk } from "@workspace/api-zod";
+import { fetchBirdeyeTokenList, getBirdeyeApiKey } from "@workspace/birdeye";
 import { enrichPool } from "../lib/pools";
 import { loadDiscoveryCandidates, loadDiscoverySettings, mergeDiscoveredPools, parseDexList } from "../lib/discovery";
 import { resolveStorageDir } from "../lib/bot-status";
@@ -17,6 +18,26 @@ type PoolListPayload = {
 
 const poolsCache = new Map<string, { data: PoolListPayload; ts: number }>();
 const CACHE_TTL = 60_000;
+
+async function fetchBirdeyePools(limit: number, minTvl: number): Promise<PoolListPayload> {
+  const records = await fetchBirdeyeTokenList({
+    limit: Math.max(limit * 2, limit),
+    minLiquidity: minTvl,
+    apiKey: getBirdeyeApiKey(),
+  });
+
+  const pools = records
+    .map((record) => birdeyeTokenToPool(record))
+    .filter((record) => Number(record.tvl ?? 0) >= minTvl)
+    .slice(0, limit)
+    .map((record) => enrichPool(record));
+
+  return {
+    pools,
+    total: pools.length,
+    lastUpdated: new Date().toISOString(),
+  };
+}
 
 async function fetchMeteoraPools(limit: number, minTvl: number): Promise<PoolListPayload> {
   const now = Date.now();
@@ -48,6 +69,27 @@ async function fetchMeteoraPools(limit: number, minTvl: number): Promise<PoolLis
 
   poolsCache.set(cacheKey, { data: payload, ts: now });
   return payload;
+}
+
+function birdeyeTokenToPool(record: Record<string, unknown>): Record<string, unknown> {
+  const address = String(record.address ?? record.token_address ?? record.mint ?? record.id ?? "");
+  const symbol = String(record.symbol ?? record.symbols ?? record.name ?? "").trim();
+  const tokenName = symbol ? `${symbol}-USDC` : address.slice(0, 6) || "TOKEN-USDC";
+  const liquidity = Number(record.liquidity ?? record.liquidity_usd ?? record.liquidityUsd ?? 0);
+  const volume24h = Number(record.volume_24h_usd ?? record.volume24hUsd ?? record.volume ?? 0);
+  const price = Number(record.price ?? record.usd_price ?? record.current_price ?? 0);
+  const fee24h = Number(record.fees_24h ?? record.fee24h ?? 0) || volume24h * 0.003;
+  return {
+    address: address || tokenName,
+    name: tokenName,
+    mint_x: address,
+    mint_y: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    liquidity,
+    trade_volume_24h: volume24h,
+    fees_24h: fee24h,
+    current_price: price,
+    bin_step: Number(record.bin_step ?? record.binStep ?? 10),
+  };
 }
 
 function snapshotToApiPool(pool: any): PoolRecord {
@@ -114,17 +156,24 @@ router.get("/", async (req, res) => {
     const storageDir = resolveStorageDir();
     const discoverySettings = await loadDiscoverySettings(storageDir, parseDexList(process.env.BOT_ENABLED_DEXES));
     const candidates = await loadDiscoveryCandidates(storageDir, 100);
-    const data = await fetchMeteoraPools(query.limit, query.minTvl).catch(async (error) => {
-      req.log.warn({ err: error }, "Meteora pool feed unavailable, using discovery fallback");
-      const fallbackPools = mergeDiscoveredPools([], candidates, discoverySettings.enabledDexes).map((pool) => snapshotToApiPool(pool));
-      return {
-        pools: fallbackPools,
-        total: fallbackPools.length,
-        lastUpdated: new Date().toISOString(),
-      } satisfies PoolListPayload;
+    let data = await fetchBirdeyePools(query.limit, query.minTvl).catch(async (birdeyeError) => {
+      req.log.warn({ err: birdeyeError }, "Birdeye pool feed unavailable, trying Meteora");
+      return null;
     });
+
+    if (!data || data.pools.length === 0) {
+      data = await fetchMeteoraPools(query.limit, query.minTvl).catch(async (meteoraError) => {
+        req.log.warn({ err: meteoraError }, "Meteora pool feed unavailable, using discovery fallback");
+        const fallbackPools = mergeDiscoveredPools([], candidates, discoverySettings.enabledDexes).map((pool) => snapshotToApiPool(pool));
+        return {
+          pools: fallbackPools,
+          total: fallbackPools.length,
+          lastUpdated: new Date().toISOString(),
+        } satisfies PoolListPayload;
+      });
+    }
     const discoveredPools = mergeDiscoveredPools(
-      data.pools.map((pool) => ({ ...pool, dex: "meteora" as const })) as any,
+      data.pools.map((pool) => pool) as any,
       candidates,
       discoverySettings.enabledDexes,
     ).map((pool) => snapshotToApiPool(pool));

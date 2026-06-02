@@ -86,6 +86,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/birdeye':
+        specifier: workspace:*
+        version: link:../../lib/birdeye
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -355,6 +358,9 @@ importers:
       '@triton-one/yellowstone-grpc':
         specifier: ^4.0.2
         version: 4.0.2
+      '@workspace/birdeye':
+        specifier: workspace:*
+        version: link:../../lib/birdeye
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -398,6 +404,12 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/birdeye:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
 
   lib/db:
     dependencies:
