@@ -60,6 +60,7 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
       const cycles = Math.max(1, Math.floor(request.cycles));
       const intervalMs = request.intervalMs ? Math.max(1000, Math.floor(request.intervalMs)) : undefined;
       const debug = normalizeDebugOptions(request.debug);
+      const storageDir = path.join(workspaceRoot, ".bot-data", "trading-bot");
       const args = [
         "--filter",
         "@workspace/trading-bot",
@@ -85,6 +86,19 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
 
       const env = {
         ...process.env,
+        BOT_STORAGE_DIR: storageDir,
+        BOT_ENABLE_WSS_POOL_WATCHER: "false",
+        BOT_DISCOVERY_BACKFILL_LIMIT: "0",
+        YELLOWSTONE_ENDPOINT: "",
+        YELLOWSTONE_TOKEN: "",
+        BOT_RPC_URL: "",
+        BOT_RPC_WS_URL: "",
+        RPC_URL: "",
+        WS_URL: "",
+        rpc_url: "",
+        ws_url: "",
+        yellowstone_endpoint: "",
+        yellowstone_token: "",
         ...(debug?.forceSignal ? { BOT_PAPER_DEBUG_FORCE_SIGNAL: "true" } : {}),
         ...(debug?.bypassRisk ? { BOT_PAPER_DEBUG_BYPASS_RISK: "true" } : {}),
       };
