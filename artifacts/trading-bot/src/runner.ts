@@ -106,6 +106,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   let runStatus: "completed" | "failed" = "completed";
   const seenSignalIds = new Set<string>();
   const retryBackoffMs = config.retryBackoffMs.length > 0 ? config.retryBackoffMs : [1_000, 3_000, 10_000];
+  const paperOpenPositions: any[] = [];
 
   metrics.recordRunStart(startedAt);
 
@@ -542,54 +543,58 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
               metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (plannedSignal.impermanentLossPct / 100));
             }
 
-            eventBus.emit("position:close", {
-              type: "position:close",
-              ts: Date.now(),
-              poolAddress: plannedSignal.poolAddress,
-              tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
-              data: {
-                source: "trade",
-                intent: slice,
-                signal: plannedSignal,
-                snapshot,
-                execution: result,
-                plan: learningPlan,
-              },
-            });
-          if (storage) {
-            const previousPosition = await storage.loadPosition(plannedSignal.poolAddress);
-            await storage.savePosition(
-              buildStoredPosition({
-                plannedSignal,
-                slice,
-                pool,
-                learningPlan,
-                execution: result,
-                isActive: false,
-                mode: config.mode,
-                createdAt: new Date().toISOString(),
-                openedAt: previousPosition?.openedAt ?? previousPosition?.createdAt,
-                closedAt: new Date().toISOString(),
-              }),
-            );
-          }
-            if (storage) {
-              await storage.saveEventHistory(buildEventHistory({
+            if (config.mode === "paper") {
+              paperOpenPositions.push({ plannedSignal, slice, pool, learningPlan, result, snapshot });
+            } else {
+              eventBus.emit("position:close", {
                 type: "position:close",
                 ts: Date.now(),
                 poolAddress: plannedSignal.poolAddress,
                 tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
                 data: {
                   source: "trade",
-                  signalId: plannedSignal.id,
-                  intentId: slice.id,
-                  strategy: learningPlan.strategy,
-                  action: plannedSignal.action,
-                  confidence: learningPlan.score,
-                  plan: learningPlan,
+                  intent: slice,
+                  signal: plannedSignal,
+                  snapshot,
                   execution: result,
+                  plan: learningPlan,
                 },
-              }));
+              });
+              if (storage) {
+                const previousPosition = await storage.loadPosition(plannedSignal.poolAddress);
+                await storage.savePosition(
+                  buildStoredPosition({
+                    plannedSignal,
+                    slice,
+                    pool,
+                    learningPlan,
+                    execution: result,
+                    isActive: false,
+                    mode: config.mode,
+                    createdAt: new Date().toISOString(),
+                    openedAt: previousPosition?.openedAt ?? previousPosition?.createdAt,
+                    closedAt: new Date().toISOString(),
+                  }),
+                );
+              }
+              if (storage) {
+                await storage.saveEventHistory(buildEventHistory({
+                  type: "position:close",
+                  ts: Date.now(),
+                  poolAddress: plannedSignal.poolAddress,
+                  tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
+                  data: {
+                    source: "trade",
+                    signalId: plannedSignal.id,
+                    intentId: slice.id,
+                    strategy: learningPlan.strategy,
+                    action: plannedSignal.action,
+                    confidence: learningPlan.score,
+                    plan: learningPlan,
+                    execution: result,
+                  },
+                }));
+              }
             }
 
             if (result.status === "rejected" || result.status === "failed") {
@@ -653,6 +658,58 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     });
     throw error;
   } finally {
+    if (config.mode === "paper" && paperOpenPositions.length > 0) {
+      for (const openPosition of paperOpenPositions.splice(0)) {
+        const closedAt = new Date().toISOString();
+        eventBus.emit("position:close", {
+          type: "position:close",
+          ts: Date.now(),
+          poolAddress: openPosition.plannedSignal.poolAddress,
+          tokenMint: openPosition.pool?.tokenXMint ?? openPosition.pool?.tokenYMint,
+          data: {
+            source: "trade",
+            intent: openPosition.slice,
+            signal: openPosition.plannedSignal,
+            snapshot: openPosition.snapshot,
+            execution: openPosition.result,
+            plan: openPosition.learningPlan,
+          },
+        });
+        if (storage) {
+          const previousPosition = await storage.loadPosition(openPosition.plannedSignal.poolAddress);
+          await storage.savePosition(
+            buildStoredPosition({
+              plannedSignal: openPosition.plannedSignal,
+              slice: openPosition.slice,
+              pool: openPosition.pool,
+              learningPlan: openPosition.learningPlan,
+              execution: openPosition.result,
+              isActive: false,
+              mode: config.mode,
+              createdAt: closedAt,
+              openedAt: previousPosition?.openedAt ?? previousPosition?.createdAt ?? closedAt,
+              closedAt,
+            }),
+          );
+          await storage.saveEventHistory(buildEventHistory({
+            type: "position:close",
+            ts: Date.now(),
+            poolAddress: openPosition.plannedSignal.poolAddress,
+            tokenMint: openPosition.pool?.tokenXMint ?? openPosition.pool?.tokenYMint,
+            data: {
+              source: "trade",
+              signalId: openPosition.plannedSignal.id,
+              intentId: openPosition.slice.id,
+              strategy: openPosition.learningPlan.strategy,
+              action: openPosition.plannedSignal.action,
+              confidence: openPosition.learningPlan.score,
+              plan: openPosition.learningPlan,
+              execution: openPosition.result,
+            },
+          }));
+        }
+      }
+    }
     await stopOrchestration();
     await learning.stop();
     const summary = metrics.snapshot();

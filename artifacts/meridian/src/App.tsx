@@ -1817,6 +1817,75 @@ function App() {
             </div>
           </div>
 
+          <div className="section-title" id="s-live-signals-feed">
+            LIVE SIGNAL FEED
+          </div>
+          <div className="space-y-3">
+            {signalFeedQuery.isLoading ? (
+              <div className="card">
+                <div className="section-label">Loading live signals...</div>
+                <div className="paper-trade-hint">Waiting for the next bot cycle.</div>
+              </div>
+            ) : signalFeedQuery.error ? (
+              <div className="card">
+                <div className="section-label" style={{ color: "var(--neon-red)" }}>SIGNAL FEED ERROR</div>
+                <div className="paper-trade-hint">{signalFeedQuery.error instanceof Error ? signalFeedQuery.error.message : String(signalFeedQuery.error)}</div>
+                <button className="connect-wallet-btn" type="button" onClick={() => signalFeedQuery.refetch()}>
+                  RETRY FEED
+                </button>
+              </div>
+            ) : recentSignals.length > 0 ? (
+              recentSignals.slice(0, 5).map((signal) => (
+                <button
+                  key={signal.id}
+                  type="button"
+                  className="signal-card green dashboard-card-button"
+                  onClick={() => {
+                    const matchingPool = pools.find((pool) => pool.address === signal.poolAddress);
+                    if (matchingPool) {
+                      handlePoolDetail(matchingPool);
+                    } else {
+                      setSelectedPoolAddress(signal.poolAddress);
+                      toastMessage(`${signal.type} · ${signal.poolName}`);
+                    }
+                  }}
+                >
+                  <div className="signal-top">
+                    <div className="token-info">
+                      <TokenBadge symbol={signal.poolName.slice(0, 3)} colorClass="sol" label={signal.poolName.slice(0, 3)} />
+                      <div>
+                        <div className="token-name" style={{ color: "var(--neon-cyan)" }}>
+                          {signal.type} · {signal.action}
+                        </div>
+                        <div className="token-pair">
+                          {signal.poolName} · {shortAddress(signal.poolAddress)}
+                        </div>
+                      </div>
+                    </div>
+                    <SmallBadge text={signal.confidence >= 0.9 ? "HIGH" : "MID"} tone={signal.confidence >= 0.9 ? "green" : "violet"} />
+                  </div>
+                  <div className="signal-metrics">
+                    <MetricBox compact value={formatCurrency(signal.suggestedCapitalUsd, 1)} label="CAPITAL" valueClass="green" />
+                    <MetricBox compact value={formatPercent(signal.confidence * 100, 0)} label="CONFIDENCE" valueClass="cyan" />
+                    <MetricBox compact value={String(Math.round(signal.severity))} label="SEVERITY" valueClass="orange" />
+                    <MetricBox compact value={String(signal.slippageBps)} label="SLIPPAGE" valueClass="violet" />
+                  </div>
+                  <div className="signal-footer">
+                    <div className="signal-time">{signal.reason[0] ?? "Live signal"}</div>
+                    <div className="enter-btn active" role="presentation">
+                      {t.viewDetail}
+                    </div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="card">
+                <div className="section-label">No live signals yet</div>
+                <div className="paper-trade-hint">The bot is running, but the feed is currently empty.</div>
+              </div>
+            )}
+          </div>
+
 	    <div className="settings-section">
 	      <div className="section-title" id="s-signal-feed">
 	        SIGNAL PULSE
