@@ -128,3 +128,51 @@ test("orchestrator routes pool events into strategy directives", async () => {
 
   assert.ok(strategyEvents.includes("TICK_RANGE_PROPHET"));
 });
+
+test("orchestrator routes mempool and smart-money events into new strategies", async () => {
+  const orchestrator = new BotOrchestrator({
+    enabled: true,
+    enableWssPoolWatcher: false,
+    enableGeyser: false,
+  });
+
+  const strategyEvents: string[] = [];
+  const stop = await orchestrator.start({
+    onStrategyTriggered: (event) => {
+      strategyEvents.push(String(event.data.strategy));
+    },
+  });
+
+  eventBus.emit("mempool:large_buy", {
+    type: "mempool:large_buy",
+    ts: Date.now(),
+    poolAddress: "pool-mempool",
+    tokenMint: "TOKEN-M",
+    walletAddress: "wallet-mempool",
+    data: {
+      source: "geyser",
+      sizeUsd: 250_000,
+      estimatedUsd: 250_000,
+      confidence: 0.92,
+    },
+  });
+
+  eventBus.emit("smart_money:cluster", {
+    type: "smart_money:cluster",
+    ts: Date.now(),
+    poolAddress: "pool-smart",
+    data: {
+      source: "geyser",
+      clusterScore: 78,
+      relatedPools: ["pool-smart-peer"],
+      smartWallets: ["wallet-a", "wallet-b", "wallet-c"],
+      confidence: 0.86,
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await stop();
+
+  assert.ok(strategyEvents.includes("PREDICTIVE_REBALANCE"));
+  assert.ok(strategyEvents.includes("SMART_MONEY_SHADOW"));
+});

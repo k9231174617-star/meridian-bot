@@ -49,6 +49,55 @@ export type FeeVelocityEvidence = {
   confidence: number;
 };
 
+export type SmartMoneyShadowEvidence = {
+  eligible: boolean;
+  clusterScore: number;
+  smartWallets: string[];
+  relatedPools: string[];
+  lagSeconds: number;
+  confidence: number;
+};
+
+export type RugDnaEvidence = {
+  eligible: boolean;
+  dnaScore: number;
+  creatorRisk: number;
+  distributionRisk: number;
+  socialRisk: number;
+  similarityCount: number;
+  pattern: "high-risk" | "mixed" | "clean";
+};
+
+export type CrossDexArbitrageEvidence = {
+  eligible: boolean;
+  spreadPct: number;
+  bestDex?: PoolSnapshot["dex"];
+  peerDex?: PoolSnapshot["dex"];
+  peerPoolAddress?: string;
+  direction: "buy-on-peer" | "buy-on-current" | "neutral";
+  confidence: number;
+};
+
+export type PumpfunGraduateEvidence = {
+  eligible: boolean;
+  progressPct: number;
+  velocityPct: number;
+  pattern: "bullish" | "bearish" | "mixed";
+  timeToGraduateMinutes: number;
+  confidence: number;
+  recommendedAction: "ADD_LIQUIDITY" | "REMOVE_LIQUIDITY" | "WAIT";
+};
+
+export type LiquidityTrapEvidence = {
+  eligible: boolean;
+  trend: "pumping" | "dumping" | "choppy";
+  centerBinId: number;
+  lowerBinId: number;
+  upperBinId: number;
+  trapBias: "below" | "above";
+  confidence: number;
+};
+
 export type LiquidityVacuumEvidence = {
   eligible: boolean;
   tvlDrawdownPct: number;
@@ -107,6 +156,11 @@ export type PhantomLiquidityEvidence = {
 export type PoolIntelligence = {
   tickRange: TickRangeForecast | null;
   feeVelocity: FeeVelocityEvidence;
+  smartMoneyShadow: SmartMoneyShadowEvidence;
+  rugDna: RugDnaEvidence;
+  crossDexArbitrage: CrossDexArbitrageEvidence;
+  pumpfunGraduate: PumpfunGraduateEvidence;
+  liquidityTrap: LiquidityTrapEvidence;
   liquidityVacuum: LiquidityVacuumEvidence;
   walletFingerprint: WalletFingerprintEvidence;
   feeCompounding: FeeCompoundingEvidence;
@@ -128,6 +182,11 @@ export function analyzePoolIntelligence(params: {
   const { pool, previous, previousCapturedAt, universe, history = [], context, capturedAt } = params;
   const poolHistory = collectPoolHistory(pool.address, history, pool, previous, capturedAt, previousCapturedAt);
   const feeVelocity = buildFeeVelocityEvidence(pool, poolHistory);
+  const smartMoneyShadow = buildSmartMoneyShadow(pool, previous, universe, poolHistory);
+  const rugDna = buildRugDnaEvidence(pool, previous, universe, context);
+  const crossDexArbitrage = buildCrossDexArbitrageEvidence(pool, universe);
+  const pumpfunGraduate = buildPumpfunGraduateEvidence(pool, poolHistory, feeVelocity);
+  const liquidityTrap = buildLiquidityTrapEvidence(pool, poolHistory, feeVelocity, smartMoneyShadow);
   const tickRange = buildTickRangeForecast(pool, poolHistory, context, feeVelocity);
   const liquidityVacuum = buildLiquidityVacuum(pool, previous, poolHistory);
   const walletFingerprint = buildWalletFingerprint(pool, context);
@@ -140,6 +199,11 @@ export function analyzePoolIntelligence(params: {
   return {
     tickRange,
     feeVelocity,
+    smartMoneyShadow,
+    rugDna,
+    crossDexArbitrage,
+    pumpfunGraduate,
+    liquidityTrap,
     liquidityVacuum,
     walletFingerprint,
     feeCompounding,
@@ -274,6 +338,200 @@ function buildFeeVelocityEvidence(
     feeCollected5mUsd: round2(feeCollected5mUsd),
     directionBias: round2(directionBias),
     sampleCount,
+    confidence: round2(confidence),
+  };
+}
+
+function buildSmartMoneyShadow(
+  pool: PoolSnapshot,
+  previous: PoolSnapshot | undefined,
+  universe: PoolSnapshot[],
+  poolHistory: Array<{ capturedAt: string; pool: PoolSnapshot }>,
+): SmartMoneyShadowEvidence {
+  const currentWallets = uniqueWallets(pool.topHolderWallets ?? []);
+  if (currentWallets.length === 0) {
+    return { eligible: false, clusterScore: 0, smartWallets: [], relatedPools: [], lagSeconds: 0, confidence: 0 };
+  }
+
+  const related = universe
+    .filter((candidate) => candidate.address !== pool.address)
+    .map((candidate) => {
+      const wallets = uniqueWallets(candidate.topHolderWallets ?? []);
+      if (wallets.length === 0) return null;
+      const overlap = intersectionCount(currentWallets, wallets);
+      const sameCreator = Boolean(pool.creatorAddress && candidate.creatorAddress && pool.creatorAddress === candidate.creatorAddress);
+      const score = overlap * 12 + (sameCreator ? 16 : 0) + (candidate.smartMoneyScore ?? 0) * 0.15;
+      if (overlap >= 2 || sameCreator) {
+        return {
+          address: candidate.address,
+          score,
+          wallets,
+        };
+      }
+      return null;
+    })
+    .filter((entry): entry is { address: string; score: number; wallets: string[] } => Boolean(entry))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+
+  const smartWallets = uniqueWallets(
+    related.flatMap((entry) => entry.wallets.filter((wallet) => currentWallets.includes(wallet))),
+  );
+  const recentHistory = poolHistory.slice(-4);
+  const lagSeconds = recentHistory.length >= 2
+    ? Math.max(5, Math.round((new Date(recentHistory.at(-1)!.capturedAt).getTime() - new Date(recentHistory[0]!.capturedAt).getTime()) / 1_000 / Math.max(1, recentHistory.length - 1)))
+    : 10;
+  const clusterScore = clamp(
+    (pool.smartMoneyScore ?? 0) * 0.65 +
+      related.reduce((sum, entry) => sum + entry.score, 0) +
+      Math.min(25, smartWallets.length * 6) +
+      (previous ? Math.max(0, ((pool.volume24hUsd - previous.volume24hUsd) / Math.max(previous.volume24hUsd, 1)) * 10) : 0),
+    0,
+    100,
+  );
+  const confidence = clamp(0.45 + clusterScore / 160, 0.2, 0.98);
+
+  return {
+    eligible: smartWallets.length >= 3 || clusterScore >= 55,
+    clusterScore: round2(clusterScore),
+    smartWallets: smartWallets.slice(0, 8),
+    relatedPools: related.map((entry) => entry.address),
+    lagSeconds,
+    confidence: round2(confidence),
+  };
+}
+
+function buildRugDnaEvidence(
+  pool: PoolSnapshot,
+  previous: PoolSnapshot | undefined,
+  universe: PoolSnapshot[],
+  context: PoolIntelligenceContext,
+): RugDnaEvidence {
+  const creatorRisk = clamp(
+    (pool.previousRugsByDev ?? context.previousRugsByDev) * 12 +
+      (pool.mintAuthorityRevoked === false ? 28 : 0) +
+      (pool.freezeAuthorityRevoked === false ? 18 : 0) +
+      (pool.liquidityLocked === false ? 16 : 0),
+    0,
+    100,
+  );
+  const concentration = Math.max(pool.topHolderSharePct ?? 0, pool.topTenHolderSharePct ?? 0);
+  const distributionRisk = clamp(concentration * 0.75 + (pool.holderGini ?? context.holderGini) * 45, 0, 100);
+  const socialRisk = clamp((pool.socialVelocityScore ?? context.socialVelocityScore) < 40 ? 30 : 0, 0, 100);
+  const similarityCount = universe.filter((candidate) => candidate.address !== pool.address && candidate.creatorAddress && candidate.creatorAddress === pool.creatorAddress).length;
+  const dnaScore = clamp(
+    creatorRisk * 0.38 +
+      distributionRisk * 0.32 +
+      socialRisk * 0.12 +
+      Math.min(20, similarityCount * 6) +
+      (previous && previous.tvlUsd > pool.tvlUsd ? 8 : 0),
+    0,
+    100,
+  );
+
+  return {
+    eligible: dnaScore >= 55,
+    dnaScore: round2(dnaScore),
+    creatorRisk: round2(creatorRisk),
+    distributionRisk: round2(distributionRisk),
+    socialRisk: round2(socialRisk),
+    similarityCount,
+    pattern: dnaScore >= 75 ? "high-risk" : dnaScore >= 55 ? "mixed" : "clean",
+  };
+}
+
+function buildCrossDexArbitrageEvidence(pool: PoolSnapshot, universe: PoolSnapshot[]): CrossDexArbitrageEvidence {
+  const pairKey = poolPairKey(pool);
+  const peers = universe.filter((candidate) => candidate.address !== pool.address && poolPairKey(candidate) === pairKey && candidate.dex && pool.dex && candidate.dex !== pool.dex && candidate.currentPrice > 0 && pool.currentPrice > 0);
+  if (peers.length === 0) {
+    return { eligible: false, spreadPct: 0, direction: "neutral", confidence: 0 };
+  }
+
+  const ordered = [...peers, pool].sort((a, b) => a.currentPrice - b.currentPrice);
+  const low = ordered[0]!;
+  const high = ordered[ordered.length - 1]!;
+  const spreadPct = low.currentPrice > 0 ? ((high.currentPrice - low.currentPrice) / low.currentPrice) * 100 : 0;
+  const bestDex = low.currentPrice <= pool.currentPrice ? low.dex : high.dex;
+  const peerDex = low.address === pool.address ? high.dex : low.dex;
+  const direction = high.address === pool.address ? "buy-on-peer" : low.address === pool.address ? "buy-on-current" : "neutral";
+  const confidence = clamp(0.45 + Math.min(0.4, spreadPct / 12) + Math.min(0.15, peers.length * 0.03), 0.2, 0.98);
+
+  return {
+    eligible: spreadPct >= 1.8 && Boolean(bestDex && peerDex),
+    spreadPct: round2(spreadPct),
+    bestDex,
+    peerDex,
+    peerPoolAddress: low.address === pool.address ? high.address : low.address,
+    direction,
+    confidence: round2(confidence),
+  };
+}
+
+function buildPumpfunGraduateEvidence(
+  pool: PoolSnapshot,
+  poolHistory: Array<{ capturedAt: string; pool: PoolSnapshot }>,
+  feeVelocity: FeeVelocityEvidence,
+): PumpfunGraduateEvidence {
+  const progressPct = clamp(pool.bondingCurveProgressPct ?? estimateBondingCurveProgress(pool), 0, 100);
+  const recent = poolHistory.slice(-5).map((entry) => entry.pool);
+  const volumeTrend = deltaTrend(recent.map((item) => item.volume24hUsd));
+  const feeTrend = deltaTrend(recent.map((item) => item.fee24hUsd));
+  const velocityPct = clamp((volumeTrend + feeTrend) / 2, -100, 100);
+  const timeToGraduateMinutes = progressPct >= 100
+    ? 0
+    : Math.max(1, Math.round(((100 - progressPct) / Math.max(1, Math.abs(velocityPct))) * 4 + (feeVelocity.acceleration > 2 ? 1 : 3)));
+  const bullish = progressPct >= 85 && velocityPct >= 12 && (pool.socialVelocityScore ?? 0) >= 60;
+  const bearish = progressPct >= 85 && velocityPct <= -8 && (pool.socialVelocityScore ?? 0) < 55;
+  const confidence = clamp(
+    0.35 + progressPct / 120 + Math.min(0.22, Math.abs(velocityPct) / 80) + (feeVelocity.quality > 0.6 ? 0.1 : 0),
+    0.2,
+    0.98,
+  );
+
+  return {
+    eligible: progressPct >= 85,
+    progressPct: round2(progressPct),
+    velocityPct: round2(velocityPct),
+    pattern: bullish ? "bullish" : bearish ? "bearish" : "mixed",
+    timeToGraduateMinutes,
+    confidence: round2(confidence),
+    recommendedAction: bearish ? "REMOVE_LIQUIDITY" : bullish ? "ADD_LIQUIDITY" : "WAIT",
+  };
+}
+
+function buildLiquidityTrapEvidence(
+  pool: PoolSnapshot,
+  poolHistory: Array<{ capturedAt: string; pool: PoolSnapshot }>,
+  feeVelocity: FeeVelocityEvidence,
+  smartMoneyShadow: SmartMoneyShadowEvidence,
+): LiquidityTrapEvidence {
+  const tokenProfile = classifyTokenProfile(pool);
+  const recent = poolHistory.slice(-4).map((entry) => entry.pool.currentPrice).filter((price) => Number.isFinite(price) && price > 0);
+  const priceTrend = recent.length >= 2 ? (recent.at(-1)! - recent[0]!) / recent[0]! : 0;
+  const trend = priceTrend <= -0.05 ? "dumping" : priceTrend >= 0.05 ? "pumping" : "choppy";
+  const bias = trend === "dumping" ? "below" : "above";
+  const baseCenter = pool.activeBinId;
+  const drift = Math.max(2, Math.round(Math.abs(priceTrend) * 18 + feeVelocity.acceleration * 1.5));
+  const lowerBinId = Math.max(0, bias === "below" ? baseCenter - drift - 2 : baseCenter - 1);
+  const upperBinId = Math.max(lowerBinId + 2, bias === "below" ? baseCenter + 1 : baseCenter + drift + 2);
+  const centerBinId = Math.round((lowerBinId + upperBinId) / 2);
+  const confidence = clamp(
+    0.4 +
+      (tokenProfile.category === "memecoin" ? 0.2 : 0) +
+      feeVelocity.quality * 0.2 +
+      smartMoneyShadow.clusterScore / 220 +
+      Math.abs(priceTrend) * 2,
+    0.2,
+    0.98,
+  );
+
+  return {
+    eligible: tokenProfile.category === "memecoin" && confidence >= 0.55,
+    trend,
+    centerBinId,
+    lowerBinId,
+    upperBinId,
+    trapBias: bias,
     confidence: round2(confidence),
   };
 }
@@ -527,6 +785,14 @@ function estimateFdvUsd(pool: PoolSnapshot) {
   return round2(Math.max(10_000, baseline + activityPremium));
 }
 
+function estimateBondingCurveProgress(pool: PoolSnapshot) {
+  if (typeof pool.bondingCurveProgressPct === "number") return pool.bondingCurveProgressPct;
+  if (pool.migrateTarget === "RAYDIUM") return 100;
+  if (pool.signalSeed === "ENTER" && pool.tvlUsd < 150_000) return 72;
+  if (pool.signalSeed === "WATCH" && pool.tvlUsd < 500_000) return 48;
+  return 0;
+}
+
 function classifyTokenProfile(pool: PoolSnapshot) {
   const ageHours = estimatePoolAgeHours(pool.createdAt);
   const holderCount = Array.isArray(pool.topHolderWallets) ? pool.topHolderWallets.length : 0;
@@ -667,6 +933,37 @@ function samplePointAtOrBefore(points: Array<{ time: number; pool: PoolSnapshot 
     break;
   }
   return candidate;
+}
+
+function poolPairKey(pool: PoolSnapshot) {
+  const tokenA = normalizeTokenLabel(pool.tokenX);
+  const tokenB = normalizeTokenLabel(pool.tokenY);
+  return [tokenA, tokenB].sort().join("/");
+}
+
+function normalizeTokenLabel(value: string) {
+  return value.trim().replace(/\s+/g, "").toUpperCase();
+}
+
+function uniqueWallets(values: string[]) {
+  return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+}
+
+function intersectionCount(left: string[], right: string[]) {
+  const rightSet = new Set(right.map((value) => value.toLowerCase()));
+  let count = 0;
+  for (const value of left) {
+    if (rightSet.has(value.toLowerCase())) count += 1;
+  }
+  return count;
+}
+
+function deltaTrend(values: number[]) {
+  if (values.length < 2) return 0;
+  const first = values[0]!;
+  const last = values[values.length - 1]!;
+  if (!Number.isFinite(first) || !Number.isFinite(last) || first === 0) return 0;
+  return clamp(((last - first) / Math.abs(first)) * 100, -100, 100);
 }
 
 function intersectionSize(a: Set<string>, b: Set<string>) {

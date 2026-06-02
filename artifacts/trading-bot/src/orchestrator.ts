@@ -15,6 +15,13 @@ export type OrchestratorHooks = {
   onTokenMintActive?: OrchestratorHook;
   onTokenRugSignal?: OrchestratorHook;
   onTokenMigrate?: OrchestratorHook;
+  onMempoolLargeBuy?: OrchestratorHook;
+  onMempoolLargeSell?: OrchestratorHook;
+  onSmartMoneyCluster?: OrchestratorHook;
+  onRugDnaHighRisk?: OrchestratorHook;
+  onCrossDexSpread?: OrchestratorHook;
+  onPumpfunGraduate?: OrchestratorHook;
+  onLiquidityTrap?: OrchestratorHook;
   onSniperDetected?: OrchestratorHook;
   onPositionOpen?: OrchestratorHook;
   onPositionClose?: OrchestratorHook;
@@ -329,6 +336,13 @@ export class BotOrchestrator {
       ["onTokenMintActive", "token:mint_active"],
       ["onTokenRugSignal", "token:rug_signal"],
       ["onTokenMigrate", "token:migrate"],
+      ["onMempoolLargeBuy", "mempool:large_buy"],
+      ["onMempoolLargeSell", "mempool:large_sell"],
+      ["onSmartMoneyCluster", "smart_money:cluster"],
+      ["onRugDnaHighRisk", "rug_dna:high_risk"],
+      ["onCrossDexSpread", "cross_dex:spread"],
+      ["onPumpfunGraduate", "pumpfun:graduate"],
+      ["onLiquidityTrap", "liquidity:trap"],
       ["onSniperDetected", "sniper:detected"],
       ["onPositionOpen", "position:open"],
       ["onPositionClose", "position:close"],
@@ -357,6 +371,13 @@ export class BotOrchestrator {
       "token:mint_active",
       "token:rug_signal",
       "token:migrate",
+      "mempool:large_buy",
+      "mempool:large_sell",
+      "smart_money:cluster",
+      "rug_dna:high_risk",
+      "cross_dex:spread",
+      "pumpfun:graduate",
+      "liquidity:trap",
       "sniper:detected",
       "position:open",
       "position:close",
@@ -518,6 +539,61 @@ export class BotOrchestrator {
         return [createDirective(base, "RUG_PULL_SHIELD", "REMOVE_LIQUIDITY", 0.99, ["Rug signal detected"])];
       case "token:migrate":
         return [createDirective(base, "BONDING_CURVE_ARB", "REBALANCE", 0.9, ["Migration or bonding curve event detected"])];
+      case "mempool:large_buy": {
+        const sizeUsd = asNumber(event.data.sizeUsd) ?? asNumber(event.data.estimatedUsd) ?? 0;
+        const confidence = Math.min(0.98, 0.72 + Math.min(0.2, sizeUsd / 250_000));
+        return [createDirective(base, "PREDICTIVE_REBALANCE", "REBALANCE", confidence, [
+          "Large buy detected in stream",
+          sizeUsd > 0 ? `Estimated size ${round2(sizeUsd)} USD` : "Size estimated from stream signal",
+        ])];
+      }
+      case "mempool:large_sell": {
+        const sizeUsd = asNumber(event.data.sizeUsd) ?? asNumber(event.data.estimatedUsd) ?? 0;
+        const confidence = Math.min(0.98, 0.72 + Math.min(0.2, sizeUsd / 250_000));
+        return [createDirective(base, "PREDICTIVE_REBALANCE", "REBALANCE", confidence, [
+          "Large sell detected in stream",
+          sizeUsd > 0 ? `Estimated size ${round2(sizeUsd)} USD` : "Size estimated from stream signal",
+        ])];
+      }
+      case "smart_money:cluster": {
+        const score = asNumber(event.data.clusterScore) ?? 0;
+        const action: StrategyAction = score >= 70 ? "ADD_LIQUIDITY" : "REBALANCE";
+        return [createDirective(base, "SMART_MONEY_SHADOW", action, Math.min(0.98, 0.7 + score / 250), [
+          `Smart money cluster score ${round2(score)}`,
+          `Related pools ${(asStringArray(event.data.relatedPools)).length}`,
+        ])];
+      }
+      case "rug_dna:high_risk": {
+        const score = asNumber(event.data.dnaScore) ?? 0;
+        return [createDirective(base, "RUG_DNA_SCANNER", "REMOVE_LIQUIDITY", Math.min(0.99, 0.75 + score / 200), [
+          `Rug DNA score ${round2(score)}`,
+          `Pattern ${String(event.data.pattern ?? "mixed")}`,
+        ])];
+      }
+      case "cross_dex:spread": {
+        const spreadPct = asNumber(event.data.spreadPct) ?? 0;
+        const action: StrategyAction = spreadPct >= 3 ? "REBALANCE" : "SWAP";
+        return [createDirective(base, "CROSS_DEX_ARB", action, Math.min(0.98, 0.68 + spreadPct / 15), [
+          `Cross-DEX spread ${round2(spreadPct)}%`,
+          `Best dex ${String(event.data.bestDex ?? "unknown")}`,
+        ])];
+      }
+      case "pumpfun:graduate": {
+        const recommendedAction = String(event.data.recommendedAction ?? "WAIT") as StrategyAction;
+        const action: StrategyAction = recommendedAction === "REMOVE_LIQUIDITY" ? "REMOVE_LIQUIDITY" : recommendedAction === "ADD_LIQUIDITY" ? "ADD_LIQUIDITY" : "WAIT";
+        return [createDirective(base, "PUMPFUN_GRADUATE_PREDICTOR", action, Math.min(0.98, 0.7 + (asNumber(event.data.progressPct) ?? 0) / 200), [
+          `Graduate progress ${round2(asNumber(event.data.progressPct) ?? 0)}%`,
+          `Velocity ${round2(asNumber(event.data.velocityPct) ?? 0)}%`,
+        ])];
+      }
+      case "liquidity:trap": {
+        const trend = String(event.data.trend ?? "choppy");
+        const action: StrategyAction = trend === "dumping" ? "ADD_LIQUIDITY" : "REBALANCE";
+        return [createDirective(base, "LIQUIDITY_TRAP", action, Math.min(0.97, 0.72 + Math.abs(asNumber(event.data.priceTrendPct) ?? 0) / 120), [
+          `Liquidity trap trend ${trend}`,
+          `Trap bins ${String(event.data.lowerBinId ?? "n/a")}-${String(event.data.upperBinId ?? "n/a")}`,
+        ])];
+      }
       case "sniper:detected":
         return [createDirective(base, "SNIPER_SHADOW", "HEDGE", 0.87, ["Sniper activity detected"])];
       case "fee:accumulated":

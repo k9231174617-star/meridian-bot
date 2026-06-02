@@ -421,6 +421,418 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
   assert.ok(types.has("PHANTOM_LIQUIDITY"));
 });
 
+test("signal engine emits the remaining orchestra signals", () => {
+  const engine = new SignalEngine();
+  const previous = {
+    capturedAt: "2026-05-31T22:00:00.000Z",
+    pools: [
+      {
+        address: "pool-shadow-main",
+        name: "SHADOW-USDC",
+        tokenX: "SHADOW",
+        tokenY: "USDC",
+        tvlUsd: 620_000,
+        volume24hUsd: 1_120_000,
+        fee24hUsd: 8_500,
+        feeRatePct: 0.92,
+        binStep: 10,
+        signalScore: 79,
+        jupScore: 76,
+        smartMoneyScore: 82,
+        degenScore: 78,
+        socialVelocityScore: 61,
+        socialVelocityDelta: 0,
+        whalePressureScore: 22,
+        whaleFlowBps: 70,
+        bondingCurveProgressPct: 12,
+        eventWindowActive: false,
+        previousRugsByDev: 0,
+        holderGini: 0.34,
+        contractRiskScore: 12,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 1.02,
+        activeBinId: 88,
+        creatorAddress: "CreatorShadow111111111111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 18,
+        topTenHolderSharePct: 29,
+        topHolderWallets: ["smart-a", "smart-b", "smart-c", "smart-d", "smart-e"],
+        createdAt: "2026-05-20T00:00:00.000Z",
+      },
+      {
+        address: "pool-shadow-peer",
+        name: "SHADX-USDC",
+        tokenX: "SHADX",
+        tokenY: "USDC",
+        tvlUsd: 340_000,
+        volume24hUsd: 520_000,
+        fee24hUsd: 3_800,
+        feeRatePct: 0.72,
+        binStep: 10,
+        signalScore: 70,
+        jupScore: 68,
+        smartMoneyScore: 63,
+        degenScore: 70,
+        socialVelocityScore: 55,
+        socialVelocityDelta: 0,
+        whalePressureScore: 19,
+        whaleFlowBps: 58,
+        bondingCurveProgressPct: 8,
+        eventWindowActive: false,
+        previousRugsByDev: 0,
+        holderGini: 0.3,
+        contractRiskScore: 10,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 0.98,
+        activeBinId: 72,
+        creatorAddress: "CreatorShadow222222222111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 17,
+        topTenHolderSharePct: 27,
+        topHolderWallets: ["smart-a", "smart-b", "smart-c", "smart-d", "smart-e"],
+        createdAt: "2026-05-18T00:00:00.000Z",
+      },
+      {
+        address: "pool-rugdna",
+        name: "DNA-USDC",
+        tokenX: "DNA",
+        tokenY: "USDC",
+        tvlUsd: 410_000,
+        volume24hUsd: 540_000,
+        fee24hUsd: 4_200,
+        feeRatePct: 0.82,
+        binStep: 12,
+        signalScore: 62,
+        jupScore: 63,
+        smartMoneyScore: 49,
+        degenScore: 52,
+        socialVelocityScore: 35,
+        socialVelocityDelta: -1,
+        whalePressureScore: 41,
+        whaleFlowBps: 120,
+        bondingCurveProgressPct: 18,
+        eventWindowActive: false,
+        previousRugsByDev: 2,
+        holderGini: 0.66,
+        contractRiskScore: 58,
+        ilRisk: "MEDIUM",
+        signalSeed: "WATCH",
+        currentPrice: 0.72,
+        activeBinId: 64,
+        creatorAddress: "CreatorDNA111111111111111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 41,
+        topTenHolderSharePct: 71,
+        topHolderWallets: ["rug-a", "rug-b", "rug-c", "rug-d"],
+        createdAt: "2026-05-19T00:00:00.000Z",
+      },
+      {
+        address: "pool-pump",
+        name: "PUMP-USDC",
+        tokenX: "PUMP",
+        tokenY: "USDC",
+        tvlUsd: 750_000,
+        volume24hUsd: 1_040_000,
+        fee24hUsd: 7_600,
+        feeRatePct: 0.96,
+        binStep: 8,
+        signalScore: 74,
+        jupScore: 71,
+        smartMoneyScore: 66,
+        degenScore: 76,
+        socialVelocityScore: 66,
+        socialVelocityDelta: 4,
+        whalePressureScore: 27,
+        whaleFlowBps: 96,
+        bondingCurveProgressPct: 94,
+        eventWindowActive: true,
+        eventName: "Pump.fun nearing graduate",
+        eventBlocksRemaining: 14,
+        previousRugsByDev: 0,
+        holderGini: 0.32,
+        contractRiskScore: 14,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 1.4,
+        activeBinId: 100,
+        creatorAddress: "CreatorPump11111111111111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 22,
+        topTenHolderSharePct: 35,
+        topHolderWallets: ["pump-a", "pump-b", "pump-c", "pump-d", "pump-e"],
+        createdAt: "2026-05-21T00:00:00.000Z",
+      },
+      {
+        address: "pool-trap",
+        name: "TRAP-USDC",
+        tokenX: "TRAP",
+        tokenY: "USDC",
+        tvlUsd: 280_000,
+        volume24hUsd: 560_000,
+        fee24hUsd: 4_100,
+        feeRatePct: 0.88,
+        binStep: 10,
+        signalScore: 69,
+        jupScore: 66,
+        smartMoneyScore: 57,
+        degenScore: 55,
+        socialVelocityScore: 47,
+        socialVelocityDelta: -2,
+        whalePressureScore: 29,
+        whaleFlowBps: 110,
+        bondingCurveProgressPct: 14,
+        eventWindowActive: false,
+        previousRugsByDev: 1,
+        holderGini: 0.58,
+        contractRiskScore: 22,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 1.8,
+        activeBinId: 74,
+        creatorAddress: "CreatorTrap11111111111111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 39,
+        topTenHolderSharePct: 68,
+        topHolderWallets: ["trap-a", "trap-b", "trap-c", "trap-d"],
+        createdAt: "2026-05-22T00:00:00.000Z",
+      },
+      {
+        address: "pool-cross-meteora",
+        name: "ARB-USDC",
+        tokenX: "ARB",
+        tokenY: "USDC",
+        dex: "meteora",
+        tvlUsd: 510_000,
+        volume24hUsd: 990_000,
+        fee24hUsd: 5_200,
+        feeRatePct: 0.71,
+        binStep: 8,
+        signalScore: 73,
+        jupScore: 70,
+        smartMoneyScore: 64,
+        degenScore: 69,
+        socialVelocityScore: 52,
+        socialVelocityDelta: 2,
+        whalePressureScore: 24,
+        whaleFlowBps: 85,
+        bondingCurveProgressPct: 0,
+        eventWindowActive: false,
+        previousRugsByDev: 0,
+        holderGini: 0.28,
+        contractRiskScore: 11,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 1.0,
+        activeBinId: 120,
+        creatorAddress: "CreatorCross11111111111111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 16,
+        topTenHolderSharePct: 24,
+        topHolderWallets: ["arb-a", "arb-b", "arb-c", "arb-d", "arb-e"],
+        createdAt: "2026-05-20T00:00:00.000Z",
+      },
+      {
+        address: "pool-cross-orca",
+        name: "ARB-USDC",
+        tokenX: "ARB",
+        tokenY: "USDC",
+        dex: "orca",
+        tvlUsd: 460_000,
+        volume24hUsd: 940_000,
+        fee24hUsd: 4_800,
+        feeRatePct: 0.69,
+        binStep: 8,
+        signalScore: 72,
+        jupScore: 68,
+        smartMoneyScore: 62,
+        degenScore: 68,
+        socialVelocityScore: 51,
+        socialVelocityDelta: 1,
+        whalePressureScore: 23,
+        whaleFlowBps: 78,
+        bondingCurveProgressPct: 0,
+        eventWindowActive: false,
+        previousRugsByDev: 0,
+        holderGini: 0.27,
+        contractRiskScore: 11,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 1.045,
+        activeBinId: 121,
+        creatorAddress: "CreatorCross22222222211111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 15,
+        topTenHolderSharePct: 23,
+        topHolderWallets: ["arb-a", "arb-b", "arb-c", "arb-d", "arb-e"],
+        createdAt: "2026-05-20T00:00:00.000Z",
+      },
+    ],
+    prices: [],
+  } satisfies MarketSnapshot;
+
+  const current = {
+    capturedAt: "2026-06-01T00:00:00.000Z",
+    pools: previous.pools.map((pool) => {
+      switch (pool.address) {
+        case "pool-shadow-main":
+          return {
+            ...pool,
+            currentPrice: 1.18,
+            activeBinId: 94,
+            tvlUsd: 700_000,
+            volume24hUsd: 1_540_000,
+            fee24hUsd: 12_200,
+            socialVelocityScore: 73,
+            socialVelocityDelta: 12,
+            smartMoneyScore: 88,
+            degenScore: 85,
+          };
+        case "pool-shadow-peer":
+          return {
+            ...pool,
+            currentPrice: 1.01,
+            activeBinId: 74,
+            tvlUsd: 390_000,
+            volume24hUsd: 640_000,
+            fee24hUsd: 4_300,
+            socialVelocityScore: 58,
+            socialVelocityDelta: 5,
+            smartMoneyScore: 70,
+          };
+        case "pool-rugdna":
+          return {
+            ...pool,
+            volume24hUsd: 490_000,
+            fee24hUsd: 4_050,
+            socialVelocityScore: 31,
+            socialVelocityDelta: -4,
+            contractRiskScore: 61,
+            holderGini: 0.7,
+            topHolderSharePct: 44,
+            topTenHolderSharePct: 76,
+          };
+        case "pool-pump":
+          return {
+            ...pool,
+            currentPrice: 1.68,
+            activeBinId: 108,
+            tvlUsd: 810_000,
+            volume24hUsd: 1_250_000,
+            fee24hUsd: 9_100,
+            socialVelocityScore: 75,
+            socialVelocityDelta: 11,
+            bondingCurveProgressPct: 97,
+            eventWindowActive: true,
+            eventBlocksRemaining: 9,
+          };
+        case "pool-trap":
+          return {
+            ...pool,
+            currentPrice: 1.42,
+            activeBinId: 67,
+            tvlUsd: 210_000,
+            volume24hUsd: 430_000,
+            fee24hUsd: 3_700,
+            socialVelocityScore: 43,
+            socialVelocityDelta: -7,
+          };
+        case "pool-cross-meteora":
+          return {
+            ...pool,
+            currentPrice: 1.0,
+            activeBinId: 122,
+            volume24hUsd: 1_080_000,
+            fee24hUsd: 5_700,
+          };
+        case "pool-cross-orca":
+          return {
+            ...pool,
+            currentPrice: 1.055,
+            activeBinId: 123,
+            volume24hUsd: 1_020_000,
+            fee24hUsd: 5_400,
+          };
+        default:
+          return pool;
+      }
+    }),
+    prices: [],
+  } satisfies MarketSnapshot;
+
+  const history: MarketSnapshot[] = [
+    {
+      capturedAt: "2026-05-31T18:00:00.000Z",
+      pools: previous.pools.map((pool) => {
+        switch (pool.address) {
+          case "pool-shadow-main":
+            return { ...pool, currentPrice: 0.98, activeBinId: 85, tvlUsd: 600_000, volume24hUsd: 980_000, fee24hUsd: 7_900 };
+          case "pool-shadow-peer":
+            return { ...pool, currentPrice: 0.94, activeBinId: 69, tvlUsd: 320_000, volume24hUsd: 470_000, fee24hUsd: 3_300 };
+          case "pool-pump":
+            return { ...pool, currentPrice: 1.28, activeBinId: 101, tvlUsd: 720_000, volume24hUsd: 980_000, fee24hUsd: 7_100, bondingCurveProgressPct: 91 };
+          case "pool-trap":
+            return { ...pool, currentPrice: 1.98, activeBinId: 77, tvlUsd: 255_000, volume24hUsd: 520_000, fee24hUsd: 3_900 };
+          case "pool-cross-meteora":
+            return { ...pool, currentPrice: 0.97, activeBinId: 118, tvlUsd: 500_000, volume24hUsd: 920_000, fee24hUsd: 4_900 };
+          case "pool-cross-orca":
+            return { ...pool, currentPrice: 1.01, activeBinId: 119, tvlUsd: 450_000, volume24hUsd: 900_000, fee24hUsd: 4_500 };
+          default:
+            return pool;
+        }
+      }),
+      prices: [],
+    },
+    {
+      capturedAt: "2026-05-31T23:00:00.000Z",
+      pools: previous.pools.map((pool) => {
+        switch (pool.address) {
+          case "pool-shadow-main":
+            return { ...pool, currentPrice: 1.09, activeBinId: 90, tvlUsd: 650_000, volume24hUsd: 1_320_000, fee24hUsd: 10_200 };
+          case "pool-shadow-peer":
+            return { ...pool, currentPrice: 0.99, activeBinId: 73, tvlUsd: 350_000, volume24hUsd: 550_000, fee24hUsd: 3_900 };
+          case "pool-pump":
+            return { ...pool, currentPrice: 1.46, activeBinId: 105, tvlUsd: 780_000, volume24hUsd: 1_120_000, fee24hUsd: 8_300, bondingCurveProgressPct: 95 };
+          case "pool-trap":
+            return { ...pool, currentPrice: 1.76, activeBinId: 71, tvlUsd: 225_000, volume24hUsd: 470_000, fee24hUsd: 3_650 };
+          case "pool-cross-meteora":
+            return { ...pool, currentPrice: 0.99, activeBinId: 120, tvlUsd: 505_000, volume24hUsd: 960_000, fee24hUsd: 5_050 };
+          case "pool-cross-orca":
+            return { ...pool, currentPrice: 1.03, activeBinId: 121, tvlUsd: 452_000, volume24hUsd: 930_000, fee24hUsd: 4_720 };
+          default:
+            return pool;
+        }
+      }),
+      prices: [],
+    },
+  ] satisfies MarketSnapshot[];
+
+  const result = engine.generate({ previous: previous as never, now: current as never, history: [...history, previous as never] });
+  const types = new Set(result.map((signal) => signal.type));
+
+  assert.ok(types.has("SMART_MONEY_SHADOW"));
+  assert.ok(types.has("RUG_DNA_SCANNER"));
+  assert.ok(types.has("CROSS_DEX_ARB"));
+  assert.ok(types.has("PUMPFUN_GRADUATE_PREDICTOR"));
+  assert.ok(types.has("LIQUIDITY_TRAP"));
+  assert.ok(types.has("PREDICTIVE_REBALANCE"));
+});
+
 test("signal engine applies fee velocity and asymmetric tick ranges", () => {
   const engine = new SignalEngine();
   const history = [

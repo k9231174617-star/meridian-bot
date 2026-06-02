@@ -297,6 +297,73 @@ function buildSignalsForPool(
     );
   }
 
+  if (intelligence.smartMoneyShadow.eligible) {
+    const shadowAction: TradeAction =
+      intelligence.smartMoneyShadow.clusterScore >= 75 || intelligence.smartMoneyShadow.confidence >= 0.8
+        ? "ADD_LIQUIDITY"
+        : "REBALANCE";
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "SMART_MONEY_SHADOW",
+        action: shadowAction,
+        confidence: clamp01(0.72 + Math.min(0.2, intelligence.smartMoneyShadow.confidence * 0.25)),
+        severity: Math.min(93, Math.round(72 + intelligence.smartMoneyShadow.clusterScore * 0.28)),
+        capitalScale: shadowAction === "REBALANCE" ? 0.14 : 0.18,
+        slippageBps: recommendDynamicSlippageBps(pool, shadowAction, 40, pool.tvlUsd * 0.15, 140),
+        priorityFeeMicroLamports: 2_350,
+        reasons: [
+          `Smart wallet cluster score ${intelligence.smartMoneyShadow.clusterScore.toFixed(1)}`,
+          `Related pools ${intelligence.smartMoneyShadow.relatedPools.length}`,
+          `Shadow lag ${intelligence.smartMoneyShadow.lagSeconds.toFixed(0)}s`,
+          `Confidence ${(intelligence.smartMoneyShadow.confidence * 100).toFixed(0)}%`,
+        ],
+        variant: "smart-money-shadow",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: Math.max(500, intelligence.smartMoneyShadow.lagSeconds * 1_000),
+          priorityProtection: "MAX",
+          relatedPools: intelligence.smartMoneyShadow.relatedPools,
+        },
+      }),
+    );
+  }
+
+  if (intelligence.rugDna.eligible) {
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "RUG_DNA_SCANNER",
+        action: "REMOVE_LIQUIDITY",
+        confidence: clamp01(0.74 + Math.min(0.2, intelligence.rugDna.dnaScore / 180)),
+        severity: Math.min(99, Math.round(78 + intelligence.rugDna.dnaScore * 0.28)),
+        capitalScale: 0.12,
+        slippageBps: recommendDynamicSlippageBps(pool, "REMOVE_LIQUIDITY", 35, pool.tvlUsd * 0.1, 150),
+        priorityFeeMicroLamports: 2_800,
+        reasons: [
+          `Rug DNA score ${intelligence.rugDna.dnaScore.toFixed(1)}`,
+          `Creator risk ${intelligence.rugDna.creatorRisk.toFixed(1)}`,
+          `Distribution risk ${intelligence.rugDna.distributionRisk.toFixed(1)}`,
+          `Similarity count ${intelligence.rugDna.similarityCount}`,
+          `Pattern ${intelligence.rugDna.pattern}`,
+        ],
+        variant: "rug-dna",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: 250,
+          priorityProtection: "MAX",
+          hedgeTo: "USDC",
+        },
+      }),
+    );
+  }
+
   const smartMoneyMomentum = pool.smartMoneyScore >= 75 && deltas.volumePct > 10 && profile.degenScore >= minDegenScore + 15;
   if (smartMoneyMomentum) {
     signals.push(
@@ -327,6 +394,39 @@ function buildSignalsForPool(
     );
   }
 
+  if (intelligence.crossDexArbitrage.eligible) {
+    const arbAction: TradeAction = intelligence.crossDexArbitrage.direction === "buy-on-peer" ? "REBALANCE" : "SWAP";
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "CROSS_DEX_ARB",
+        action: arbAction,
+        confidence: clamp01(0.68 + Math.min(0.22, intelligence.crossDexArbitrage.confidence * 0.3)),
+        severity: Math.min(94, Math.round(72 + intelligence.crossDexArbitrage.spreadPct * 4)),
+        capitalScale: 0.14,
+        slippageBps: recommendDynamicSlippageBps(pool, arbAction, 35, pool.tvlUsd * 0.12, 120),
+        priorityFeeMicroLamports: 2_050,
+        reasons: [
+          `Cross-DEX spread ${intelligence.crossDexArbitrage.spreadPct.toFixed(2)}%`,
+          `Best dex ${intelligence.crossDexArbitrage.bestDex ?? "unknown"}`,
+          `Peer dex ${intelligence.crossDexArbitrage.peerDex ?? "unknown"}`,
+          `Peer pool ${intelligence.crossDexArbitrage.peerPoolAddress ?? "n/a"}`,
+          `Direction ${intelligence.crossDexArbitrage.direction}`,
+        ],
+        variant: "cross-dex-arb",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: 750,
+          priorityProtection: "MAX",
+          relatedPools: intelligence.crossDexArbitrage.peerPoolAddress ? [intelligence.crossDexArbitrage.peerPoolAddress] : undefined,
+        },
+      }),
+    );
+  }
+
   if (pool.feeRatePct >= 0.4 && pool.jupScore >= 65 && profile.degenScore >= minDegenScore + 10) {
     signals.push(
       createSignal({
@@ -351,6 +451,114 @@ function buildSignalsForPool(
           minDelayMs: 0,
           maxDelayMs: 1_500,
           priorityProtection: "HIGH",
+        },
+      }),
+    );
+  }
+
+  if (intelligence.pumpfunGraduate.eligible && intelligence.pumpfunGraduate.recommendedAction !== "WAIT") {
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "PUMPFUN_GRADUATE_PREDICTOR",
+        action: intelligence.pumpfunGraduate.recommendedAction,
+        confidence: clamp01(0.66 + Math.min(0.24, intelligence.pumpfunGraduate.confidence * 0.25)),
+        severity: Math.min(95, Math.round(70 + intelligence.pumpfunGraduate.progressPct * 0.22)),
+        capitalScale: intelligence.pumpfunGraduate.recommendedAction === "REMOVE_LIQUIDITY" ? 0.1 : 0.16,
+        slippageBps: recommendDynamicSlippageBps(pool, intelligence.pumpfunGraduate.recommendedAction, 40, pool.tvlUsd * 0.12, 130),
+        priorityFeeMicroLamports: 2_150,
+        reasons: [
+          `Bonding curve progress ${intelligence.pumpfunGraduate.progressPct.toFixed(1)}%`,
+          `Velocity ${intelligence.pumpfunGraduate.velocityPct.toFixed(1)}%`,
+          `Pattern ${intelligence.pumpfunGraduate.pattern}`,
+          `Time to graduate ${intelligence.pumpfunGraduate.timeToGraduateMinutes}m`,
+        ],
+        variant: "pumpfun-graduate",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: 1_000,
+          priorityProtection: intelligence.pumpfunGraduate.recommendedAction === "REMOVE_LIQUIDITY" ? "MAX" : "HIGH",
+        },
+      }),
+    );
+  }
+
+  if (intelligence.liquidityTrap.eligible) {
+    const trapAction: TradeAction = intelligence.liquidityTrap.trend === "dumping" ? "ADD_LIQUIDITY" : "REBALANCE";
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "LIQUIDITY_TRAP",
+        action: trapAction,
+        confidence: clamp01(0.64 + intelligence.liquidityTrap.confidence * 0.28),
+        severity: Math.min(92, Math.round(70 + intelligence.liquidityTrap.confidence * 20)),
+        capitalScale: 0.13,
+        slippageBps: recommendDynamicSlippageBps(pool, trapAction, 35, pool.tvlUsd * 0.11, 120),
+        priorityFeeMicroLamports: 1_950,
+        reasons: [
+          `Trend ${intelligence.liquidityTrap.trend}`,
+          `Trap bias ${intelligence.liquidityTrap.trapBias}`,
+          `Trap bin ${intelligence.liquidityTrap.lowerBinId}-${intelligence.liquidityTrap.upperBinId}`,
+          `Center bin ${intelligence.liquidityTrap.centerBinId}`,
+        ],
+        variant: "liquidity-trap",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: 900,
+          priorityProtection: "MAX",
+          tickRange: {
+            lowerBinId: intelligence.liquidityTrap.lowerBinId,
+            upperBinId: intelligence.liquidityTrap.upperBinId,
+            centerBinId: intelligence.liquidityTrap.centerBinId,
+            horizonMinutes: 10,
+            confidence: intelligence.liquidityTrap.confidence,
+            predictedMoveBps: intelligence.liquidityTrap.trend === "dumping" ? -120 : 120,
+            tokenProfile: intelligence.tickRange?.tokenProfile,
+          },
+        },
+      }),
+    );
+  }
+
+  if (
+    intelligence.tickRange &&
+    intelligence.tickRange.confidence >= 0.72 &&
+    (intelligence.feeVelocity.eligible || intelligence.smartMoneyShadow.eligible || profile.eventWindowActive)
+  ) {
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "PREDICTIVE_REBALANCE",
+        action: "REBALANCE",
+        confidence: clamp01(0.7 + Math.min(0.25, intelligence.tickRange.confidence * 0.25)),
+        severity: Math.min(95, Math.round(74 + Math.abs(intelligence.tickRange.predictedMoveBps) / 40)),
+        capitalScale: 0.15,
+        slippageBps: recommendDynamicSlippageBps(pool, "REBALANCE", 45, pool.tvlUsd * 0.12, 140),
+        priorityFeeMicroLamports: 2_450,
+        reasons: [
+          `Forecast band ${intelligence.tickRange.lowerBinId}-${intelligence.tickRange.upperBinId}`,
+          `Predicted move ${intelligence.tickRange.predictedMoveBps.toFixed(0)} bps`,
+          `Confidence ${(intelligence.tickRange.confidence * 100).toFixed(0)}%`,
+          intelligence.feeVelocity.eligible
+            ? `Fee acceleration ${intelligence.feeVelocity.acceleration.toFixed(2)}x`
+            : `Smart money cluster ${intelligence.smartMoneyShadow.clusterScore.toFixed(1)}`,
+        ],
+        variant: "predictive-rebalance",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: 600,
+          priorityProtection: "MAX",
+          tickRange: intelligence.tickRange,
+          routeAuction: intelligence.executionAuction,
         },
       }),
     );

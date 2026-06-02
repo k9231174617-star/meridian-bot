@@ -143,9 +143,10 @@ export class GeyserClient {
   }
 
   private handleMessage(message: unknown) {
-    const event = this.toBotEvent(message);
-    if (!event) return;
-    eventBus.emit(event.type, event);
+    const events = this.toBotEvents(message);
+    for (const event of events) {
+      eventBus.emit(event.type, event);
+    }
   }
 
   private buildSubscribeRequest() {
@@ -201,9 +202,23 @@ export class GeyserClient {
     };
   }
 
-  private toBotEvent(message: unknown): BotEvent | null {
-    if (!message || typeof message !== "object") return null;
+  private toBotEvents(message: unknown): BotEvent[] {
+    if (!message || typeof message !== "object") return [];
     const payload = message as Record<string, unknown>;
+    const events: BotEvent[] = [];
+
+    const flowEvent = this.detectLargeFlowEvent(payload);
+    if (flowEvent) events.push(flowEvent);
+
+    const logEvent = this.toBotEventFromLogs(payload);
+    if (logEvent) events.push(logEvent);
+
+    return events;
+  }
+
+  private toBotEventFromLogs(message: Record<string, unknown>): BotEvent | null {
+    const payload = message;
+    if (!message || typeof message !== "object") return null;
     const logMessages = extractLogMessages(payload);
     const text = logMessages.join(" ").toLowerCase();
 
@@ -240,6 +255,71 @@ export class GeyserClient {
     }
 
     return null;
+  }
+
+  private detectLargeFlowEvent(payload: Record<string, unknown>): BotEvent | null {
+    const tx = firstObject(payload.transaction) ?? firstObject(payload.tx) ?? firstObject(payload.message) ?? payload;
+    const meta = firstObject(tx.meta) ?? firstObject(payload.meta);
+    const preBalances = asNumberArray(meta?.preBalances);
+    const postBalances = asNumberArray(meta?.postBalances);
+    const lamportDelta = balanceDelta(preBalances, postBalances);
+    const tokenDelta = extractLargestTokenDelta(meta);
+    const tokenMint = tokenDelta?.mint ?? extractTokenMint(payload);
+    const walletAddress = tokenDelta?.owner ?? extractWalletAddress(payload);
+    const poolAddress = extractPoolAddress(payload) ?? extractPoolAddress(tx) ?? undefined;
+
+    if (!tokenMint) return null;
+
+    const direction: "buy" | "sell" | null = tokenDelta
+      ? tokenDelta.delta > 0
+        ? "buy"
+        : tokenDelta.delta < 0
+          ? "sell"
+          : null
+      : lamportDelta < 0
+        ? "buy"
+        : lamportDelta > 0
+          ? "sell"
+          : null;
+
+    if (!direction) return null;
+
+    const absLamports = Math.abs(lamportDelta);
+    const absTokenDelta = Math.abs(tokenDelta?.delta ?? 0);
+    const estimatedUsd = estimateUsdFromFlow({
+      lamports: absLamports,
+      tokenDelta: absTokenDelta,
+      meta,
+      payload,
+    });
+    const confidence = clamp01(
+      0.55 +
+        Math.min(0.25, absLamports / 10_000_000_000) +
+        Math.min(0.1, absTokenDelta / 10_000) +
+        (poolAddress ? 0.05 : 0),
+    );
+
+    if (absLamports < 250_000_000 && absTokenDelta < 100) return null;
+
+    return {
+      type: direction === "buy" ? "mempool:large_buy" : "mempool:large_sell",
+      ts: Date.now(),
+      poolAddress,
+      tokenMint,
+      walletAddress,
+      data: {
+        source: "geyser",
+        payload,
+        direction,
+        lamportDelta,
+        tokenDelta: tokenDelta?.delta ?? 0,
+        estimatedUsd,
+        confidence: round2(confidence),
+        poolAddress,
+        tokenMint,
+        walletAddress,
+      },
+    };
   }
 
   private setStatus(status: GeyserStatus) {
@@ -288,6 +368,138 @@ function extractLogMessages(payload: Record<string, unknown>): string[] {
 
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
+}
+
+function firstObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
+function asNumberArray(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value
+        .map((entry) => (typeof entry === "number" && Number.isFinite(entry) ? entry : Number(entry)))
+        .filter((entry) => Number.isFinite(entry))
+    : [];
+}
+
+function balanceDelta(pre: number[], post: number[]) {
+  const length = Math.max(pre.length, post.length);
+  let delta = 0;
+  for (let index = 0; index < length; index += 1) {
+    delta += (post[index] ?? 0) - (pre[index] ?? 0);
+  }
+  return delta;
+}
+
+type TokenBalanceDelta = { mint: string; owner?: string; delta: number };
+
+function extractLargestTokenDelta(meta: Record<string, unknown> | undefined): TokenBalanceDelta | null {
+  if (!meta) return null;
+  const pre = Array.isArray(meta.preTokenBalances) ? meta.preTokenBalances : [];
+  const post = Array.isArray(meta.postTokenBalances) ? meta.postTokenBalances : [];
+  const byKey = new Map<string, { pre?: Record<string, unknown>; post?: Record<string, unknown> }>();
+
+  for (const entry of pre) {
+    const record = firstObject(entry);
+    const key = tokenBalanceKey(record);
+    if (!key) continue;
+    byKey.set(key, { ...(byKey.get(key) ?? {}), pre: record });
+  }
+
+  for (const entry of post) {
+    const record = firstObject(entry);
+    const key = tokenBalanceKey(record);
+    if (!key) continue;
+    byKey.set(key, { ...(byKey.get(key) ?? {}), post: record });
+  }
+
+  let largest: TokenBalanceDelta | null = null;
+  for (const entry of byKey.values()) {
+    const mint = typeof entry.post?.mint === "string" ? entry.post.mint : typeof entry.pre?.mint === "string" ? entry.pre.mint : "";
+    if (!mint) continue;
+    const owner = typeof entry.post?.owner === "string" ? entry.post.owner : typeof entry.pre?.owner === "string" ? entry.pre.owner : undefined;
+    const preAmount = tokenBalanceAmount(entry.pre);
+    const postAmount = tokenBalanceAmount(entry.post);
+    const delta = postAmount - preAmount;
+    if (!largest || Math.abs(delta) > Math.abs(largest.delta)) {
+      largest = { mint, owner, delta };
+    }
+  }
+  return largest;
+}
+
+function tokenBalanceKey(entry: Record<string, unknown> | undefined) {
+  if (!entry) return null;
+  const accountIndex = typeof entry.accountIndex === "number" ? entry.accountIndex : undefined;
+  const mint = typeof entry.mint === "string" ? entry.mint : undefined;
+  if (typeof accountIndex === "number" && mint) return `${accountIndex}:${mint}`;
+  if (mint) return mint;
+  return null;
+}
+
+function tokenBalanceAmount(entry: Record<string, unknown> | undefined) {
+  if (!entry) return 0;
+  const uiAmount = entry.uiTokenAmount && typeof entry.uiTokenAmount === "object"
+    ? (entry.uiTokenAmount as Record<string, unknown>)
+    : undefined;
+  const amount = uiAmount?.uiAmount;
+  if (typeof amount === "number" && Number.isFinite(amount)) return amount;
+  const raw = typeof entry.amount === "string" ? Number(entry.amount) : typeof entry.amount === "number" ? entry.amount : NaN;
+  if (!Number.isFinite(raw)) return 0;
+  const decimals = typeof uiAmount?.decimals === "number" ? uiAmount.decimals : typeof entry.decimals === "number" ? entry.decimals : 0;
+  return raw / 10 ** Math.max(0, decimals);
+}
+
+function extractTokenMint(payload: Record<string, unknown>) {
+  const candidates = [
+    payload.tokenMint,
+    payload.mint,
+    firstObject(payload.token)?.mint,
+    firstObject(payload.account)?.mint,
+  ];
+  return candidates.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function extractWalletAddress(payload: Record<string, unknown>) {
+  const candidates = [
+    payload.walletAddress,
+    payload.owner,
+    firstObject(payload.account)?.owner,
+    firstObject(payload.signer)?.pubkey,
+  ];
+  return candidates.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function extractPoolAddress(payload: Record<string, unknown>) {
+  const candidates = [
+    payload.poolAddress,
+    payload.address,
+    payload.accountAddress,
+    firstObject(payload.account)?.address,
+    firstObject(payload.pool)?.address,
+  ];
+  return candidates.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function estimateUsdFromFlow(params: { lamports: number; tokenDelta: number; meta?: Record<string, unknown>; payload: Record<string, unknown> }) {
+  const explicit = [
+    params.payload.estimatedUsd,
+    params.payload.sizeUsd,
+    params.payload.valueUsd,
+    params.meta?.estimatedUsd,
+  ].find((value) => typeof value === "number" && Number.isFinite(value));
+  if (typeof explicit === "number") return explicit;
+  const solPriceUsd = 150;
+  const lamportUsd = params.lamports / 1_000_000_000 * solPriceUsd;
+  return round2(Math.max(lamportUsd, params.tokenDelta));
+}
+
+function round2(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 function defaultProgramIds() {
