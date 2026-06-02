@@ -1258,6 +1258,54 @@ function App() {
               <div className="metric-lbl">Updated</div>
             </div>
           </div>
+          <div className="runtime-control-bar">
+            <div className="runtime-control-group">
+              <div className="runtime-control-label">AUTO TRADING</div>
+              <div className="runtime-control-sub">
+                {autoTradingEnabled
+                  ? `Live execution enabled · wallet ${liveWalletLabel}`
+                  : `Live execution disabled · wallet ${liveWalletLabel}`}
+              </div>
+              <button
+                className={`connect-wallet-btn runtime-control-button ${autoTradingEnabled ? "active" : "inactive"}`}
+                type="button"
+                onClick={toggleAutoTrading}
+                disabled={botControlsMutation.isPending}
+              >
+                {botControlsMutation.isPending
+                  ? "UPDATING..."
+                  : autoTradingEnabled
+                    ? "AUTO TRADING: ON"
+                    : "AUTO TRADING: OFF"}
+              </button>
+            </div>
+            <div className="runtime-control-group">
+              <div className="runtime-control-label">PAPER TRADING</div>
+              <div className="runtime-control-sub">
+                {paperTradeStatus?.status === "running"
+                  ? `Test session running · PID ${paperTradeStatus.pid ?? "?"}`
+                  : paperTradeStatus?.status === "stopping"
+                    ? "Stopping current test session..."
+                  : paperTradeStatus?.status === "completed"
+                    ? "Last paper session completed"
+                    : paperTradeStatus?.status === "failed"
+                      ? `Last paper session failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
+                      : "Bounded test mode for data collection"}
+              </div>
+              <button
+                className={`paper-trade-stop-button runtime-control-button ${paperTradeRunning ? "active" : "inactive"}`}
+                type="button"
+                onClick={startPaperTrade}
+                disabled={paperTradeMutation.isPending || paperTradeStopMutation.isPending}
+              >
+                {paperTradeRunning
+                  ? (paperTradeStopMutation.isPending ? "STOPPING..." : "PAPER TRADE: ON")
+                  : paperTradeMutation.isPending
+                    ? "STARTING..."
+                    : "PAPER TRADE: OFF"}
+              </button>
+            </div>
+          </div>
           <div className="section-title mt-4">{t.marketSnapshot}</div>
           <div className="grid grid-auto-fit gap-3">
             <MetricBox value={apiHealthy ? "OK" : "DEGRADED"} label="API HEALTH" valueClass={apiHealthy ? "green" : "orange"} />
@@ -1270,44 +1318,15 @@ function App() {
           <div className="paper-trade-control">
             <div className="paper-trade-row">
               <div>
-                <div className="paper-trade-label">AUTO TRADING</div>
+                <div className="paper-trade-label">PAPER DATA SESSION</div>
                 <div className="paper-trade-sub">
-                  {autoTradingEnabled
-                    ? `Live execution enabled · wallet ${liveWalletLabel}`
-                    : `Live execution disabled · wallet ${liveWalletLabel}`}
-                </div>
-              </div>
-              <div className={`paper-trade-pill ${autoTradingEnabled ? "running" : "failed"}`}>
-                {autoTradingEnabled ? "LIVE ON" : "LIVE OFF"}
-              </div>
-            </div>
-            <div className="paper-trade-row paper-trade-row-controls">
-              <button
-                className={`connect-wallet-btn paper-trade-button ${autoTradingEnabled ? "active" : "inactive"}`}
-                type="button"
-                onClick={toggleAutoTrading}
-                disabled={botControlsMutation.isPending}
-              >
-                {botControlsMutation.isPending
-                  ? "UPDATING..."
-                  : autoTradingEnabled
-                    ? "AUTO TRADING: ON"
-                    : "AUTO TRADING: OFF"}
-              </button>
-            </div>
-            <div className="paper-trade-row" style={{ marginTop: 12 }}>
-              <div>
-                <div className="paper-trade-label">PAPER TRADING</div>
-                <div className="paper-trade-sub">
-                  {paperTradeStatus?.status === "running"
-                    ? `Test session running · PID ${paperTradeStatus.pid ?? "?"}`
-                    : paperTradeStatus?.status === "stopping"
-                      ? "Stopping current test session..."
-                    : paperTradeStatus?.status === "completed"
-                      ? "Last paper session completed"
-                      : paperTradeStatus?.status === "failed"
-                        ? `Last paper session failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
-                        : "Bounded test mode for data collection"}
+                  {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
+                    ? `Paper debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+                    : paperTradeRunning
+                      ? `Paper session is collecting data · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+                      : autoTradingEnabled
+                        ? `Live trading ready · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+                        : "Live trading disabled · bot scans but does not execute live intents"}
                 </div>
               </div>
               <div className={`paper-trade-pill ${paperTradeStatus?.status ?? "idle"}`}>
@@ -1342,30 +1361,8 @@ function App() {
                 />
                 <span>Bypass risk gates</span>
               </label>
-              <button
-                className={`paper-trade-stop-button ${paperTradeRunning ? "active" : "inactive"}`}
-                type="button"
-                onClick={startPaperTrade}
-                disabled={paperTradeMutation.isPending || paperTradeStopMutation.isPending}
-              >
-                {paperTradeRunning
-                  ? (paperTradeStopMutation.isPending ? "STOPPING..." : "PAPER TRADE: ON")
-                  : paperTradeMutation.isPending
-                    ? "STARTING..."
-                    : "PAPER TRADE: OFF"}
-              </button>
             </div>
-	        <div className="paper-trade-hint">
-	          {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
-	            ? `Paper debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-	            : paperTradeRunning
-	              ? `Paper session is collecting data · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-	              : autoTradingEnabled
-	                ? `Live trading ready · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-	                : "Live trading disabled · bot scans but does not execute live intents"}
-	        </div>
-	      </div>
-	    </div>
+          </div>
 
 	    <div className="settings-section">
 	      <div className="section-title" id="s-signal-feed">
@@ -1649,6 +1646,7 @@ function App() {
             <div className="text-sm text-[var(--text-dim)]">{t.noWallet}</div>
           )}
         </div>
+      </div>
       </div>
 
       <div className={`page ${currentPage === "positions" ? "active" : ""}`} id="page-positions">
