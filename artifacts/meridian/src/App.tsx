@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   PoolSignalType,
   PoolIlRisk,
@@ -610,6 +610,7 @@ async function stopPaperTrade(): Promise<PaperTradeStatus> {
 }
 
 function App() {
+  const queryClient = useQueryClient();
   const [lang, setLang] = useState<Language>(() => readStorage(LANGUAGE_KEY, "en"));
   const [currentPage, setCurrentPage] = useState<Page>(() => readStorage(PAGE_KEY, "signals") as Page);
   const [agentRunning, setAgentRunning] = useState(() => readBool(AGENT_KEY, true));
@@ -872,7 +873,11 @@ function App() {
     },
     onSuccess: async () => {
       toastMessage(lang === "ru" ? "▶ Paper trading запущен" : "▶ Paper trading started");
-      await Promise.all([statusQuery.refetch(), paperTradeStatusQuery.refetch()]);
+      await Promise.all([
+        statusQuery.refetch(),
+        paperTradeStatusQuery.refetch(),
+        signalFeedQuery.refetch(),
+      ]);
     },
     onError: (error) => {
       toastMessage(error instanceof Error ? error.message : String(error));
@@ -882,7 +887,11 @@ function App() {
     mutationFn: stopPaperTrade,
     onSuccess: async () => {
       toastMessage(lang === "ru" ? "⏹ Paper trading остановлен" : "⏹ Paper trading stopped");
-      await Promise.all([statusQuery.refetch(), paperTradeStatusQuery.refetch()]);
+      await Promise.all([
+        statusQuery.refetch(),
+        paperTradeStatusQuery.refetch(),
+        signalFeedQuery.refetch(),
+      ]);
     },
     onError: (error) => {
       toastMessage(error instanceof Error ? error.message : String(error));
@@ -897,6 +906,8 @@ function App() {
     queryKey: ["signal-feed"],
     queryFn: fetchSignalFeed,
     refetchInterval: 15_000,
+    staleTime: 5_000,
+    gcTime: 60_000,
   });
   const discoveryMutation = useMutation({
     mutationFn: saveDiscoverySettings,
@@ -917,11 +928,21 @@ function App() {
   const signalFeed = signalFeedQuery.data;
   const botControls = botControlsQuery.data;
   const autoTradingEnabled = botControls?.autoTradingEnabled ?? true;
+  const previousPaperTradeStatus = useRef<PaperTradeStatus["status"] | undefined>(undefined);
   useEffect(() => {
     if (discovery?.settings.enabledDexes) {
       setEnabledDexes(discovery.settings.enabledDexes);
     }
   }, [discovery?.settings.enabledDexes]);
+  useEffect(() => {
+    const currentStatus = paperTradeStatusQuery.data?.status;
+    const previousStatus = previousPaperTradeStatus.current;
+    if (currentStatus === "completed" && previousStatus !== "completed") {
+      void queryClient.invalidateQueries({ queryKey: ["signal-feed"] });
+      void queryClient.invalidateQueries({ queryKey: ["bot-status"] });
+    }
+    previousPaperTradeStatus.current = currentStatus;
+  }, [paperTradeStatusQuery.data?.status, queryClient]);
   const totalPnlUsd = analytics?.totalPnlUsd ?? positionsQuery.data?.totalPnlUsd ?? 0;
   const totalFeesEarned = analytics?.totalFeesEarned ?? positionsQuery.data?.totalFeesEarned ?? 0;
   const totalLiquidityUsd = positionsQuery.data?.totalLiquidityUsd ?? 0;
@@ -1413,10 +1434,15 @@ function App() {
 	              </div>
 	            </div>
 	          ))
-	        ) : (
-	          <div className="py-4 text-sm text-[var(--text-dim)]">No recent signals recorded yet</div>
-	        )}
-	      </div>
+        ) : (
+          <div className="py-4 text-sm text-[var(--text-dim)]">
+            No recent signals recorded yet
+            {paperTradeRunning ? (
+              <div className="mt-1 text-xs text-[var(--neon-cyan)]">Paper trading is still running or just finished. Waiting for the next refresh.</div>
+            ) : null}
+          </div>
+        )}
+      </div>
 	    </div>
 
         <div className="chips-row">
