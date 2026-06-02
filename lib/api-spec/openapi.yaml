@@ -136,6 +136,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/AnalyticsResponse"
 
+  /bot/signals:
+    get:
+      operationId: getBotSignals
+      tags: [analytics]
+      summary: Get recent bot signals
+      responses:
+        "200":
+          description: Recent signals and aggregate counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalFeedResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -395,3 +408,93 @@ components:
         - totalTrades
         - avgHoldTime
         - pnlHistory
+
+    RecentSignal:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        action:
+          type: string
+        poolAddress:
+          type: string
+        poolName:
+          type: string
+        risk:
+          type: string
+        confidence:
+          type: number
+        severity:
+          type: number
+        reason:
+          type: array
+          items:
+            type: string
+        suggestedCapitalUsd:
+          type: number
+        slippageBps:
+          type: number
+        priorityFeeMicroLamports:
+          type: number
+        degenScore:
+          type: number
+        socialVelocityScore:
+          type: number
+        whalePressureScore:
+          type: number
+        eventName:
+          type: string
+        executionHints:
+          type: object
+          properties:
+            splitCount:
+              type: number
+            minDelayMs:
+              type: number
+            maxDelayMs:
+              type: number
+            priorityProtection:
+              type: string
+              enum: [HIGH, MAX]
+            hedgeTo:
+              type: string
+          required: []
+        createdAt:
+          type: string
+      required:
+        - id
+        - type
+        - action
+        - poolAddress
+        - poolName
+        - risk
+        - confidence
+        - severity
+        - reason
+        - suggestedCapitalUsd
+        - slippageBps
+        - priorityFeeMicroLamports
+        - createdAt
+
+    SignalFeedResponse:
+      type: object
+      properties:
+        updatedAt:
+          type: string
+        total:
+          type: integer
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentSignal"
+      required:
+        - updatedAt
+        - total
+        - counts
+        - signals

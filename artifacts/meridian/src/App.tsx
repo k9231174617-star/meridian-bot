@@ -1,14 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import {
   PoolSignalType,
   PoolIlRisk,
@@ -22,6 +13,8 @@ import {
   useHealthCheck,
 } from "@workspace/api-client-react";
 import "./dashboard.css";
+
+const PnLChart = lazy(() => import("./components/pnl-chart").then((module) => ({ default: module.PnLChart })));
 
 type Page = "signals" | "positions" | "analytics" | "wallet" | "settings";
 type Chip = "all" | "hot" | "meteora" | "raydium" | "orca" | "smart" | "organic";
@@ -118,6 +111,38 @@ type DiscoveryStatus = {
     observations: number;
     rejected: number;
   };
+};
+
+type SignalFeed = {
+  updatedAt: string;
+  total: number;
+  counts: Record<string, number>;
+  signals: Array<{
+    id: string;
+    type: string;
+    action: string;
+    poolAddress: string;
+    poolName: string;
+    risk: string;
+    confidence: number;
+    severity: number;
+    reason: string[];
+    suggestedCapitalUsd: number;
+    slippageBps: number;
+    priorityFeeMicroLamports: number;
+    degenScore?: number;
+    socialVelocityScore?: number;
+    whalePressureScore?: number;
+    eventName?: string;
+    executionHints?: {
+      splitCount?: number;
+      minDelayMs?: number;
+      maxDelayMs?: number;
+      priorityProtection?: "HIGH" | "MAX";
+      hedgeTo?: string;
+    };
+    createdAt: string;
+  }>;
 };
 
 type UiPool = Pool & {
@@ -512,6 +537,15 @@ async function fetchDiscoveryStatus(): Promise<DiscoveryStatus> {
   return (await response.json()) as DiscoveryStatus;
 }
 
+async function fetchSignalFeed(): Promise<SignalFeed> {
+  const response = await fetch("/api/bot/signals", { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`Signal feed request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as SignalFeed;
+}
+
 async function saveDiscoverySettings(enabledDexes: SupportedDex[]): Promise<DiscoveryStatus> {
   const response = await fetch("/api/bot/discovery", {
     method: "PUT",
@@ -812,6 +846,11 @@ function App() {
     queryFn: fetchDiscoveryStatus,
     refetchInterval: 30_000,
   });
+  const signalFeedQuery = useQuery({
+    queryKey: ["signal-feed"],
+    queryFn: fetchSignalFeed,
+    refetchInterval: 15_000,
+  });
   const discoveryMutation = useMutation({
     mutationFn: saveDiscoverySettings,
     onSuccess: async (result) => {
@@ -828,6 +867,7 @@ function App() {
   const positions = positionsQuery.data?.positions ?? [];
   const prices = pricesQuery.data?.prices ?? {};
   const discovery = discoveryQuery.data;
+  const signalFeed = signalFeedQuery.data;
   useEffect(() => {
     if (discovery?.settings.enabledDexes) {
       setEnabledDexes(discovery.settings.enabledDexes);
@@ -846,6 +886,9 @@ function App() {
   const discoveryCandidates = discovery?.candidates ?? [];
   const discoveryObservations = discovery?.observations ?? [];
   const discoveryTotals = discovery?.totals ?? { candidates: 0, meteora: 0, raydium: 0, orca: 0, observations: 0, rejected: 0 };
+  const recentSignals = signalFeed?.signals ?? [];
+  const signalCounts = signalFeed?.counts ?? {};
+  const topSignalType = Object.entries(signalCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "NONE";
 
   const sortedPositions = useMemo(
     () => [...positions].sort((a, b) => b.liquidityUsd - a.liquidityUsd),
@@ -1238,13 +1281,57 @@ function App() {
                 {paperTradeStopMutation.isPending ? "STOPPING..." : "STOP PAPER TRADE"}
               </button>
             </div>
-            <div className="paper-trade-hint">
-              {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
-                ? `Debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-                : `Real signal mode · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`}
-            </div>
-          </div>
-        </div>
+	        <div className="paper-trade-hint">
+	          {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
+	            ? `Debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+	            : `Real signal mode · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`}
+	        </div>
+	      </div>
+	    </div>
+
+	    <div className="settings-section">
+	      <div className="section-title" id="s-signal-feed">
+	        SIGNAL PULSE
+	      </div>
+	      <div className="grid grid-auto-fit gap-3">
+	        <MetricBox value={signalFeedQuery.isLoading ? "..." : String(signalFeed?.total ?? 0)} label="RECENT SIGNALS" valueClass="cyan" />
+	        <MetricBox value={topSignalType} label="TOP TYPE" valueClass="violet" />
+	        <MetricBox value={signalCounts.RUG_SHIELD ? String(signalCounts.RUG_SHIELD) : "0"} label="RUG SHIELD" valueClass="green" />
+	        <MetricBox value={signalCounts.SOCIAL_VELOCITY ? String(signalCounts.SOCIAL_VELOCITY) : "0"} label="SOCIAL VELOCITY" valueClass="orange" />
+	        <MetricBox value={signalCounts.WHALE_ADJUST ? String(signalCounts.WHALE_ADJUST) : "0"} label="WHALE ADJUST" valueClass="violet" />
+	        <MetricBox value={signalFeed?.updatedAt ? formatRelativeShort(signalFeed.updatedAt) : "—"} label="FEED UPDATED" valueClass="cyan" />
+	      </div>
+	      <div className="card" style={{ marginTop: 12 }}>
+	        {signalFeedQuery.isLoading ? (
+	          <div className="py-4 text-sm text-[var(--text-dim)]">Loading recent signals...</div>
+	        ) : signalFeedQuery.error ? (
+	          <div className="py-4 text-sm text-[var(--neon-orange)]">
+	            {signalFeedQuery.error instanceof Error ? signalFeedQuery.error.message : String(signalFeedQuery.error)}
+	          </div>
+	        ) : recentSignals.length > 0 ? (
+	          recentSignals.slice(0, 5).map((signal) => (
+	            <div className="smartmoney-row" key={signal.id}>
+	              <div className="sm-wallet" style={{ fontSize: 12, color: "var(--text)" }}>
+	                {signal.type} · {signal.action}
+	              </div>
+	              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--neon-cyan)" }}>
+	                {shortAddress(signal.poolAddress)} · {signal.risk}
+	              </div>
+	              <div className="sm-amount" style={{ color: signal.severity >= 95 ? "var(--neon-red)" : signal.severity >= 85 ? "var(--neon-orange)" : "var(--neon-green)" }}>
+	                {signal.confidence >= 0.9 ? "HIGH" : "MID"}
+	              </div>
+	              <div style={{ width: "100%", fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+	                {signal.reason[0] ?? "Signal generated"}
+	                {signal.executionHints?.priorityProtection ? ` · ${signal.executionHints.priorityProtection} protection` : ""}
+	                {signal.executionHints?.hedgeTo ? ` · hedge ${signal.executionHints.hedgeTo}` : ""}
+	              </div>
+	            </div>
+	          ))
+	        ) : (
+	          <div className="py-4 text-sm text-[var(--text-dim)]">No recent signals recorded yet</div>
+	        )}
+	      </div>
+	    </div>
 
         <div className="chips-row">
           {[
@@ -1656,25 +1743,15 @@ function App() {
         <div className="card">
           <div style={{ width: "100%", height: 180 }}>
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="pnlGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#39ff14" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#39ff14" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="rgba(0,255,180,0.08)" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fill: "#4a7a6e", fontSize: 9 }} tickFormatter={(value) => new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
-                  <YAxis tick={{ fill: "#4a7a6e", fontSize: 9 }} />
-                  <Tooltip
-                    contentStyle={{ background: "#081310", border: "1px solid rgba(0,255,180,.2)", borderRadius: 12, color: "#c8f0e8" }}
-                    labelFormatter={(value) => new Date(String(value)).toLocaleDateString("en-US")}
-                    formatter={(value: number) => [formatCurrency(value, 2), "P&L"]}
-                  />
-                  <Area type="monotone" dataKey="pnl" stroke="#39ff14" fill="url(#pnlGradient)" strokeWidth={2.25} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center text-sm text-[var(--text-dim)]">
+                    Loading chart...
+                  </div>
+                }
+              >
+                <PnLChart data={chartData} />
+              </Suspense>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-[var(--text-dim)]">{t.connectHint}</div>
             )}

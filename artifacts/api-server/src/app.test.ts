@@ -429,3 +429,71 @@ test("metrics endpoint exposes scrapeable text", { concurrency: false }, async (
     process.env.BOT_STORAGE_DIR = originalStorageDir;
   }
 });
+
+test("signals endpoint returns recent signals newest-first", { concurrency: false }, async () => {
+  const originalStorageDir = process.env.BOT_STORAGE_DIR;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "bot-signals-api-"));
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    path.join(dir, "signals.jsonl"),
+    [
+      JSON.stringify({
+        kind: "signal",
+        signal: {
+          id: "sig-1",
+          type: "RUG_SHIELD",
+          action: "REMOVE_LIQUIDITY",
+          poolAddress: "pool-1",
+          poolName: "POOL 1",
+          risk: "HIGH",
+          confidence: 0.99,
+          severity: 100,
+          reason: ["Rug Pull Shield triggered"],
+          suggestedCapitalUsd: 250,
+          slippageBps: 25,
+          priorityFeeMicroLamports: 3000,
+          createdAt: "2026-06-01T00:00:00.000Z",
+        },
+      }),
+      JSON.stringify({
+        kind: "signal",
+        signal: {
+          id: "sig-2",
+          type: "SOCIAL_VELOCITY",
+          action: "ADD_LIQUIDITY",
+          poolAddress: "pool-2",
+          poolName: "POOL 2",
+          risk: "MEDIUM",
+          confidence: 0.91,
+          severity: 88,
+          reason: ["Narrative velocity accelerating"],
+          suggestedCapitalUsd: 180,
+          slippageBps: 35,
+          priorityFeeMicroLamports: 2100,
+          createdAt: "2026-06-01T00:01:00.000Z",
+        },
+      }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  process.env.BOT_STORAGE_DIR = dir;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/bot/signals`);
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        total: number;
+        counts: Record<string, number>;
+        signals: Array<{ id: string; type: string; createdAt: string }>;
+      };
+      assert.equal(body.total, 2);
+      assert.equal(body.signals[0]?.id, "sig-2");
+      assert.equal(body.signals[1]?.id, "sig-1");
+      assert.equal(body.counts.SOCIAL_VELOCITY, 1);
+    });
+  } finally {
+    process.env.BOT_STORAGE_DIR = originalStorageDir;
+  }
+});

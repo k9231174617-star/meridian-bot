@@ -21,4 +21,6 @@ export * from "./position";
 export * from "./positionListResponse";
 export * from "./pricesResponse";
 export * from "./pricesResponsePrices";
+export * from "./recentSignal";
+export * from "./signalFeedResponse";
 export * from "./tokenPrice";

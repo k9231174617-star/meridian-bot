@@ -126,6 +126,40 @@ export interface AnalyticsResponse {
   pnlHistory: AnalyticsResponsePnlHistoryItem[];
 }
 
+export interface RecentSignal {
+  id: string;
+  type: string;
+  action: string;
+  poolAddress: string;
+  poolName: string;
+  risk: string;
+  confidence: number;
+  severity: number;
+  reason: string[];
+  suggestedCapitalUsd: number;
+  slippageBps: number;
+  priorityFeeMicroLamports: number;
+  degenScore?: number;
+  socialVelocityScore?: number;
+  whalePressureScore?: number;
+  eventName?: string;
+  executionHints?: {
+    splitCount?: number;
+    minDelayMs?: number;
+    maxDelayMs?: number;
+    priorityProtection?: "HIGH" | "MAX";
+    hedgeTo?: string;
+  };
+  createdAt: string;
+}
+
+export interface SignalFeedResponse {
+  updatedAt: string;
+  total: number;
+  counts: Record<string, number>;
+  signals: RecentSignal[];
+}
+
 export type GetPoolsParams = {
   limit?: number;
   minTvl?: number;

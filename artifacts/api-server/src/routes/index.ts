@@ -6,6 +6,7 @@ import pricesRouter from "./prices";
 import analyticsRouter from "./analytics";
 import botRouter from "./bot";
 import discoveryRouter from "./discovery";
+import signalsRouter from "./signals";
 import paperTradeRouter from "./paper-trade";
 
 const router: IRouter = Router();
@@ -17,6 +18,7 @@ router.use("/prices", pricesRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/bot", botRouter);
 router.use("/bot/discovery", discoveryRouter);
+router.use("/bot/signals", signalsRouter);
 router.use("/bot/paper-trade", paperTradeRouter);
 
 export default router;

@@ -196,3 +196,40 @@ export const GetAnalyticsResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * @summary Get recent bot signals
+ */
+export const GetBotSignalsResponse = zod.object({
+  updatedAt: zod.string(),
+  total: zod.number(),
+  counts: zod.record(zod.string(), zod.number()),
+  signals: zod.array(
+    zod.object({
+      id: zod.string(),
+      type: zod.string(),
+      action: zod.string(),
+      poolAddress: zod.string(),
+      poolName: zod.string(),
+      risk: zod.string(),
+      confidence: zod.number(),
+      severity: zod.number(),
+      reason: zod.array(zod.string()),
+      suggestedCapitalUsd: zod.number(),
+      slippageBps: zod.number(),
+      priorityFeeMicroLamports: zod.number(),
+      degenScore: zod.number().optional(),
+      socialVelocityScore: zod.number().optional(),
+      whalePressureScore: zod.number().optional(),
+      eventName: zod.string().optional(),
+      executionHints: zod.object({
+        splitCount: zod.number().optional(),
+        minDelayMs: zod.number().optional(),
+        maxDelayMs: zod.number().optional(),
+        priorityProtection: zod.enum(["HIGH", "MAX"]).optional(),
+        hedgeTo: zod.string().optional(),
+      }).optional(),
+      createdAt: zod.string(),
+    }),
+  ),
+});

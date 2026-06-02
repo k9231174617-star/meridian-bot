@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const buildIndexPath = path.join(workspaceRoot, "artifacts", "meridian", "dist", "public", "index.html");
+const apiServerRoot = path.join(workspaceRoot, "artifacts", "api-server");
+const smokePort = Number(process.env["SMOKE_PORT"] ?? "18081");
 
 if (!existsSync(buildIndexPath)) {
   throw new Error(
@@ -13,10 +15,10 @@ if (!existsSync(buildIndexPath)) {
   );
 }
 
-const child = spawn("pnpm", ["start"], {
-  cwd: workspaceRoot,
+const child = spawn("node", ["--enable-source-maps", "./dist/index.mjs"], {
+  cwd: apiServerRoot,
   stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env },
+  env: { ...process.env, PORT: String(smokePort) },
 });
 const childExited = once(child, "exit");
 
@@ -47,10 +49,13 @@ process.on("SIGTERM", () => {
 
 try {
   await waitFor(async () => {
-    const health = await fetch("http://127.0.0.1:8081/api/healthz");
+    const health = await fetch(`http://127.0.0.1:${smokePort}/api/healthz`);
     if (!health.ok) throw new Error(`Health check returned ${health.status}`);
 
-    const root = await fetch("http://127.0.0.1:8081/");
+    const signals = await fetch(`http://127.0.0.1:${smokePort}/api/bot/signals`);
+    if (!signals.ok) throw new Error(`Signals endpoint returned ${signals.status}`);
+
+    const root = await fetch(`http://127.0.0.1:${smokePort}/`);
     if (!root.ok) throw new Error(`Root path returned ${root.status}`);
 
     const contentType = root.headers.get("content-type") ?? "";
