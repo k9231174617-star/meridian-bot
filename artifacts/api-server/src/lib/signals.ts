@@ -25,6 +25,23 @@ export type RecentSignalRecord = {
     maxDelayMs?: number;
     priorityProtection?: "HIGH" | "MAX";
     hedgeTo?: string;
+    tickRange?: {
+      lowerBinId: number;
+      upperBinId: number;
+      centerBinId: number;
+      horizonMinutes: number;
+      confidence: number;
+      predictedMoveBps: number;
+    };
+    relatedPools?: string[];
+    compoundingRatio?: number;
+    routeAuction?: {
+      preferredRoute: "JUPITER" | "DIRECT_POOL" | "JITO";
+      candidates: Array<"JUPITER" | "DIRECT_POOL" | "JITO">;
+      simulationBudgetMs: number;
+    };
+    fingerprintRisk?: number;
+    phantomLiquidity?: boolean;
   };
   createdAt: string;
 };

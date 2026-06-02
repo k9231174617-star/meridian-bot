@@ -14,7 +14,15 @@ export type SignalType =
   | "INSURANCE_HEDGE"
   | "COPY_PASTE_LP"
   | "FLASH_LP"
-  | "WHALE_ADJUST";
+  | "WHALE_ADJUST"
+  | "TICK_RANGE_PROPHET"
+  | "LIQUIDITY_VACUUM"
+  | "WALLET_FINGERPRINT"
+  | "FEE_COMPOUNDING_FLYWHEEL"
+  | "NARRATIVE_GRAPH"
+  | "DEAD_POOL_RESURRECTOR"
+  | "EXECUTION_AUCTION"
+  | "PHANTOM_LIQUIDITY";
 export type TradeAction = "ADD_LIQUIDITY" | "REMOVE_LIQUIDITY" | "SWAP" | "HEDGE" | "WAIT" | "REBALANCE";
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
@@ -105,6 +113,23 @@ export type Signal = {
     maxDelayMs?: number;
     priorityProtection?: "HIGH" | "MAX";
     hedgeTo?: string;
+    tickRange?: {
+      lowerBinId: number;
+      upperBinId: number;
+      centerBinId: number;
+      horizonMinutes: number;
+      confidence: number;
+      predictedMoveBps: number;
+    };
+    relatedPools?: string[];
+    compoundingRatio?: number;
+    routeAuction?: {
+      preferredRoute: "JUPITER" | "DIRECT_POOL" | "JITO";
+      candidates: Array<"JUPITER" | "DIRECT_POOL" | "JITO">;
+      simulationBudgetMs: number;
+    };
+    fingerprintRisk?: number;
+    phantomLiquidity?: boolean;
   };
   createdAt: string;
 };
@@ -121,7 +146,7 @@ export type TradeIntent = {
   amountUsd: number;
   slippageBps: number;
   priorityFeeMicroLamports: number;
-  route: "JUPITER" | "DIRECT_POOL" | "PAPER";
+  route: "JUPITER" | "DIRECT_POOL" | "PAPER" | "AUCTION";
   executionHints?: Signal["executionHints"];
   createdAt: string;
 };

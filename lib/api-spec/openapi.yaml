@@ -460,6 +460,55 @@ components:
               enum: [HIGH, MAX]
             hedgeTo:
               type: string
+            tickRange:
+              type: object
+              properties:
+                lowerBinId:
+                  type: number
+                upperBinId:
+                  type: number
+                centerBinId:
+                  type: number
+                horizonMinutes:
+                  type: number
+                confidence:
+                  type: number
+                predictedMoveBps:
+                  type: number
+              required:
+                - lowerBinId
+                - upperBinId
+                - centerBinId
+                - horizonMinutes
+                - confidence
+                - predictedMoveBps
+            relatedPools:
+              type: array
+              items:
+                type: string
+            compoundingRatio:
+              type: number
+            routeAuction:
+              type: object
+              properties:
+                preferredRoute:
+                  type: string
+                  enum: [JUPITER, DIRECT_POOL, JITO]
+                candidates:
+                  type: array
+                  items:
+                    type: string
+                    enum: [JUPITER, DIRECT_POOL, JITO]
+                simulationBudgetMs:
+                  type: number
+              required:
+                - preferredRoute
+                - candidates
+                - simulationBudgetMs
+            fingerprintRisk:
+              type: number
+            phantomLiquidity:
+              type: boolean
           required: []
         createdAt:
           type: string

@@ -186,11 +186,13 @@ export class RiskEngine {
       amountUsd: decision.cappedAmountUsd,
       slippageBps: signal.slippageBps,
       priorityFeeMicroLamports: signal.priorityFeeMicroLamports,
-      route: signal.action === "SWAP" || signal.action === "HEDGE"
-        ? "JUPITER"
-        : mode === "paper"
-          ? "PAPER"
-          : "DIRECT_POOL",
+      route: signal.executionHints?.routeAuction
+        ? "AUCTION"
+        : signal.action === "SWAP" || signal.action === "HEDGE"
+          ? "JUPITER"
+          : mode === "paper"
+            ? "PAPER"
+            : "DIRECT_POOL",
       executionHints: signal.executionHints,
       createdAt: new Date().toISOString(),
     };
