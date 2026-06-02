@@ -114,7 +114,15 @@ router.get("/", async (req, res) => {
     const storageDir = resolveStorageDir();
     const discoverySettings = await loadDiscoverySettings(storageDir, parseDexList(process.env.BOT_ENABLED_DEXES));
     const candidates = await loadDiscoveryCandidates(storageDir, 100);
-    const data = await fetchMeteoraPools(query.limit, query.minTvl);
+    const data = await fetchMeteoraPools(query.limit, query.minTvl).catch(async (error) => {
+      req.log.warn({ err: error }, "Meteora pool feed unavailable, using discovery fallback");
+      const fallbackPools = mergeDiscoveredPools([], candidates, discoverySettings.enabledDexes).map((pool) => snapshotToApiPool(pool));
+      return {
+        pools: fallbackPools,
+        total: fallbackPools.length,
+        lastUpdated: new Date().toISOString(),
+      } satisfies PoolListPayload;
+    });
     const discoveredPools = mergeDiscoveredPools(
       data.pools.map((pool) => ({ ...pool, dex: "meteora" as const })) as any,
       candidates,

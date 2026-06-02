@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { resolveStorageDir } from "./bot-status.js";
+import { resolveStorageDir, resolveStorageDirs } from "./bot-status.js";
 
 export type RecentSignalRecord = {
   id: string;
@@ -115,10 +114,5 @@ async function readSignalRecords(storageDir: string) {
 }
 
 function resolveCandidateDirs() {
-  return [resolveStorageDir()]
-    .concat([
-      path.resolve(process.cwd(), ".bot-data", "trading-bot"),
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".bot-data", "trading-bot"),
-    ])
-    .map((candidate) => path.resolve(candidate));
+  return resolveStorageDirs().map((candidate) => path.resolve(candidate));
 }
