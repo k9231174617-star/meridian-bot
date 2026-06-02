@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { GetPoolsQueryParams, GetPoolParams, PoolSignalType, PoolIlRisk } from "@workspace/api-zod";
-import { fetchBirdeyeTokenList, getBirdeyeApiKey } from "@workspace/birdeye";
+import { fetchBirdeyeTrendingTokens, getBirdeyeApiKey } from "@workspace/birdeye";
 import { enrichPool } from "../lib/pools";
 import { loadDiscoveryCandidates, loadDiscoverySettings, mergeDiscoveredPools, parseDexList } from "../lib/discovery";
 import { resolveStorageDir } from "../lib/bot-status";
@@ -20,9 +20,11 @@ const poolsCache = new Map<string, { data: PoolListPayload; ts: number }>();
 const CACHE_TTL = 60_000;
 
 async function fetchBirdeyePools(limit: number, minTvl: number): Promise<PoolListPayload> {
-  const records = await fetchBirdeyeTokenList({
+  const records = await fetchBirdeyeTrendingTokens({
     limit: Math.max(limit * 2, limit),
-    minLiquidity: minTvl,
+    sortBy: "liquidity",
+    sortType: "desc",
+    interval: "24h",
     apiKey: getBirdeyeApiKey(),
   });
 

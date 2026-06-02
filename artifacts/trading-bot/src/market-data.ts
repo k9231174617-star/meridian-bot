@@ -1,7 +1,7 @@
 import type { MarketSnapshot, PoolSnapshot, PriceSnapshot } from "./domain.js";
 import {
   DEFAULT_BIRDEYE_PRICE_SYMBOLS,
-  fetchBirdeyeTokenList,
+  fetchBirdeyeTrendingTokens,
   fetchBirdeyeTokenMarketData,
   fetchBirdeyeTokenPrice,
   getBirdeyeApiKey,
@@ -42,9 +42,11 @@ export class DirectMarketDataProvider implements MarketDataProvider {
 
   private async fetchPools(): Promise<PoolSnapshot[]> {
     try {
-      const records = await fetchBirdeyeTokenList({
+      const records = await fetchBirdeyeTrendingTokens({
         limit: Math.max(this.limit * 2, this.limit),
-        minLiquidity: this.minTvl,
+        sortBy: "liquidity",
+        sortType: "desc",
+        interval: "24h",
         apiKey: this.birdeyeApiKey ?? getBirdeyeApiKey(),
       });
       const birdeyePools = records

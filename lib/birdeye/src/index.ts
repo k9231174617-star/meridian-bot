@@ -44,6 +44,33 @@ export async function fetchBirdeyeTokenList(options: {
   return flattenBirdeyeRecords(body);
 }
 
+export async function fetchBirdeyeTrendingTokens(options: {
+  limit?: number;
+  sortBy?: "rank" | "volumeUSD" | "liquidity";
+  sortType?: "asc" | "desc";
+  interval?: "1h" | "4h" | "24h";
+  apiKey?: string;
+} = {}): Promise<BirdeyeRecord[]> {
+  const query = new URLSearchParams({
+    sort_by: options.sortBy ?? "liquidity",
+    sort_type: options.sortType ?? "desc",
+    interval: options.interval ?? "24h",
+    offset: "0",
+    limit: String(Math.min(Math.max(options.limit ?? 20, 1), 20)),
+    ui_amount_mode: "scaled",
+  });
+
+  const response = await fetch(`${BIRDEYE_API_URL}/defi/token_trending?${query.toString()}`, {
+    headers: birdeyeHeaders(options.apiKey),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`Birdeye trending tokens error: ${response.status}`);
+
+  const body = await response.json();
+  const records = extractBirdeyeTrendingRecords(body);
+  return records;
+}
+
 export async function fetchBirdeyeTokenMarketData(address: string, apiKey?: string): Promise<BirdeyeRecord | undefined> {
   const query = new URLSearchParams({
     address,
@@ -134,6 +161,15 @@ export function extractBirdeyeRecord(body: unknown): BirdeyeRecord | undefined {
     return body;
   }
   return undefined;
+}
+
+export function extractBirdeyeTrendingRecords(body: unknown): BirdeyeRecord[] {
+  if (!isRecord(body)) return [];
+  const candidate = body.data ?? body.result ?? body.item;
+  if (!isRecord(candidate)) return [];
+  const tokens = candidate.tokens ?? candidate.items ?? candidate.result;
+  if (!Array.isArray(tokens)) return [];
+  return tokens.filter(isRecord);
 }
 
 function birdeyeHeaders(apiKey?: string): Record<string, string> {
