@@ -3,7 +3,6 @@ import { GetPoolsQueryParams, GetPoolParams, PoolSignalType, PoolIlRisk } from "
 import { enrichPool } from "../lib/pools";
 import { loadDiscoveryCandidates, loadDiscoverySettings, mergeDiscoveredPools, parseDexList } from "../lib/discovery";
 import { resolveStorageDir } from "../lib/bot-status";
-import { buildDemoPools } from "../lib/demo-data";
 
 const router = Router();
 
@@ -129,8 +128,7 @@ router.get("/", async (req, res) => {
       candidates,
       discoverySettings.enabledDexes,
     ).map((pool) => snapshotToApiPool(pool));
-    const demoPools = buildDemoPools().map((pool) => snapshotToApiPool(pool));
-    const mergedPools = [...demoPools, ...discoveredPools]
+    const mergedPools = [...discoveredPools]
       .reduce<PoolRecord[]>((acc, pool) => {
         if (!acc.some((entry) => entry.address === pool.address)) {
           acc.push(pool);
