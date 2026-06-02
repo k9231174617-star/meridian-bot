@@ -451,6 +451,7 @@ const STRINGS: Record<Language, StringMap> = {
 const LANGUAGE_KEY = "meridian.lang";
 const WALLET_KEY = "meridian.walletAddress";
 const PROVIDER_KEY = "meridian.walletProvider";
+const WALLET_CONNECT_PENDING_KEY = "meridian.walletConnectPendingProvider";
 const AGENT_KEY = "meridian.agentRunning";
 const RISK_KEY = "meridian.risk";
 const AUTO_OPEN_KEY = "meridian.autoOpen";
@@ -740,6 +741,9 @@ function App() {
   const [walletProvider, setWalletProvider] = useState<string>(() => readStorage(PROVIDER_KEY, "Phantom"));
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [walletConnectPendingProvider, setWalletConnectPendingProvider] = useState<WalletOptionName | "">(
+    () => readStorage(WALLET_CONNECT_PENDING_KEY, "") as WalletOptionName | "",
+  );
   const [chip, setChip] = useState<Chip>(() => readStorage(CHIP_KEY, "all") as Chip);
   const [minTvl, setMinTvl] = useState(() => Number(readStorage(MIN_TVL_KEY, "500000")) || 500000);
   const [minJup, setMinJup] = useState(() => Number(readStorage(MIN_JUP_KEY, "60")) || 60);
@@ -810,6 +814,10 @@ function App() {
   }, [walletProvider]);
 
   useEffect(() => {
+    window.localStorage.setItem(WALLET_CONNECT_PENDING_KEY, walletConnectPendingProvider);
+  }, [walletConnectPendingProvider]);
+
+  useEffect(() => {
     window.localStorage.setItem(MIN_TVL_KEY, String(minTvl));
   }, [minTvl]);
 
@@ -874,7 +882,18 @@ function App() {
     setWalletProvider(activeAdapterWallet.adapter.name);
     setWalletConnected(true);
     setWalletModalOpen(false);
+    setWalletConnectPendingProvider("");
   }, [activeAdapterWallet, adapterConnected, adapterPublicKey]);
+
+  useEffect(() => {
+    if (!walletConnectPendingProvider) return;
+    const timeout = window.setTimeout(() => {
+      if (!walletConnected) {
+        setWalletConnectPendingProvider("");
+      }
+    }, 90_000);
+    return () => window.clearTimeout(timeout);
+  }, [walletConnectPendingProvider, walletConnected]);
 
   useEffect(() => {
     if (!agentRunning) return;
@@ -1325,15 +1344,9 @@ function App() {
   }
 
   async function connectWalletProvider(providerName: WalletOptionName) {
-    if (isMobileDevice) {
-      try {
-        const url = buildMobileWalletConnectUrl(providerName);
-        window.location.href = url;
-        return;
-      } catch (error) {
-        toastMessage(error instanceof Error ? error.message : String(error));
-        return;
-      }
+    if (walletConnectPendingProvider === providerName) {
+      toastMessage(`${providerName} connection is already pending`);
+      return;
     }
 
     if (providerName === "Phantom" || providerName === "Solflare") {
@@ -1342,28 +1355,33 @@ function App() {
           select(providerName as WalletName<string>);
           await connect();
           toastMessage(`${providerName} connection requested`);
+          setWalletConnectPendingProvider("");
           return;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (/not ready|not detected|not installed/i.test(message)) {
-            window.location.href = buildMobileWalletConnectUrl(providerName);
-            toastMessage(`Opening ${providerName}`);
+            if (!isMobileDevice) {
+              toastMessage(`Opening ${providerName}`);
+            }
+          } else {
+            toastMessage(message);
             return;
           }
-          toastMessage(message);
-          return;
         }
       }
-
-      window.location.href = buildMobileWalletConnectUrl(providerName);
-      toastMessage(`Opening ${providerName}`);
-      return;
     }
 
     const provider = resolveInjectedWalletProvider(providerName);
     if (!provider?.connect) {
-      window.location.href = buildMobileWalletConnectUrl(providerName);
-      toastMessage(`Opening ${providerName}`);
+      try {
+        setWalletConnectPendingProvider(providerName);
+        const url = buildMobileWalletConnectUrl(providerName);
+        window.location.href = url;
+        toastMessage(`Opening ${providerName}`);
+      } catch (error) {
+        setWalletConnectPendingProvider("");
+        toastMessage(error instanceof Error ? error.message : String(error));
+      }
       return;
     }
 
@@ -1378,12 +1396,20 @@ function App() {
       setWalletProvider(providerName);
       setWalletConnected(true);
       setWalletModalOpen(false);
+      setWalletConnectPendingProvider("");
       toastMessage(`${providerName} · ${shortAddress(address)} connected`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/not ready|not detected|not installed/i.test(message)) {
-        window.location.href = buildMobileWalletConnectUrl(providerName);
-        toastMessage(`Opening ${providerName}`);
+        try {
+          setWalletConnectPendingProvider(providerName);
+          const url = buildMobileWalletConnectUrl(providerName);
+          window.location.href = url;
+          toastMessage(`Opening ${providerName}`);
+        } catch (launchError) {
+          setWalletConnectPendingProvider("");
+          toastMessage(launchError instanceof Error ? launchError.message : String(launchError));
+        }
         return;
       }
       toastMessage(message);
@@ -1392,6 +1418,7 @@ function App() {
 
   function disconnectWallet() {
     setWalletConnected(false);
+    setWalletConnectPendingProvider("");
     if (activeAdapterWallet) {
       void activeAdapterWallet.adapter.disconnect().catch(() => undefined);
     }
@@ -2816,7 +2843,13 @@ function App() {
             {lang === "ru" ? "CONNECT WALLET" : "CONNECT WALLET"}
           </div>
           <div className="modal-sub" id="wm-sub">
-            {lang === "ru" ? "Выберите Solana кошелёк для подключения" : "Select a Solana wallet to connect"}
+            {walletConnectPendingProvider
+              ? (lang === "ru"
+                  ? `Ожидание подтверждения в ${walletConnectPendingProvider}`
+                  : `Waiting for ${walletConnectPendingProvider} confirmation`)
+              : (lang === "ru"
+                  ? "Выберите Solana кошелёк для подключения"
+                  : "Select a Solana wallet to connect")}
           </div>
           <div className="wallet-list">
             {walletOptions.map((option) => (
@@ -2825,7 +2858,7 @@ function App() {
                 key={option.name}
                 type="button"
                 onClick={() => void connectWalletProvider(option.name)}
-                disabled={isMobileDevice && !walletConnectReady}
+                disabled={(isMobileDevice && !walletConnectReady) || walletConnectPendingProvider === option.name}
                 style={{ ["--wallet-accent" as string]: option.accent }}
               >
                 <div className="wo-icon" aria-hidden="true">
@@ -2835,7 +2868,11 @@ function App() {
                   <div className="wo-name">{option.name}</div>
                   <div className="wo-sub">{option.subtitle}</div>
                 </div>
-                {option.recommended ? <div className="wo-badge" id="wm-recommended">{t.recommended}</div> : null}
+                {walletConnectPendingProvider === option.name ? (
+                  <div className="wo-badge" id="wm-recommended">
+                    {lang === "ru" ? "ЖДЁМ" : "PENDING"}
+                  </div>
+                ) : option.recommended ? <div className="wo-badge" id="wm-recommended">{t.recommended}</div> : null}
               </button>
             ))}
           </div>
