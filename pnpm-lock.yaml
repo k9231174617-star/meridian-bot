@@ -144,6 +144,9 @@ importers:
 
   artifacts/meridian:
     dependencies:
+      '@solana-mobile/wallet-standard-mobile':
+        specifier: ^0.5.2
+        version: 0.5.2(typescript@5.9.3)
       '@solana/wallet-adapter-base':
         specifier: ^0.9.27
         version: 0.9.27(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))
@@ -2268,14 +2271,19 @@ packages:
     peerDependencies:
       react-native: '>0.74'
 
+  '@solana-mobile/mobile-wallet-adapter-protocol@2.2.8':
+    resolution: {integrity: sha512-c3FQsrM7nV62DqVaHGKtr2osE2w5gS3/wjy8ILF0zczS/s1mERX+JTmf+UHd8xgESmEj/IM7q+U2Qhrmac1PdA==}
+    peerDependencies:
+      react-native: '>0.74'
+
   '@solana-mobile/wallet-adapter-mobile@2.2.7':
     resolution: {integrity: sha512-v1ORNrDtsIFI5Mi//g5yMrgsAHS2H0AGtAbCi8F6S5iOV4KNme9YZb5F/Ut6BMaDt0sGEysobYLwkLlY9xDTSg==}
     peerDependencies:
       '@solana/web3.js': ^1.98.4
       react-native: '>0.74'
 
-  '@solana-mobile/wallet-standard-mobile@0.5.1':
-    resolution: {integrity: sha512-9L5OA4DE9Mi5aw7VzDAnV3/kLyoKQnQfEMyv6D43zYdmvbGPW5YLgiHYI7XCz1ZIPNLshqyMjQfy+5CjJjGEYg==}
+  '@solana-mobile/wallet-standard-mobile@0.5.2':
+    resolution: {integrity: sha512-orEGv4N/Ttd0umwfWUzGcEnVc9eJDTgRSEcDitvFWpIf2D968h6128L0rq9/y7sUw88Gvu/lU0euoC2ASEijqQ==}
 
   '@solana-program/compute-budget@0.8.0':
     resolution: {integrity: sha512-qPKxdxaEsFxebZ4K5RPuy7VQIm/tfJLa1+Nlt3KNA8EYQkz9Xm8htdoEaXVrer9kpgzzp9R3I3Bh6omwCM06tQ==}
@@ -8392,11 +8400,22 @@ snapshots:
       - fastestsmallesttextencoderdecoder
       - typescript
 
+  '@solana-mobile/mobile-wallet-adapter-protocol@2.2.8(typescript@5.9.3)':
+    dependencies:
+      '@solana/codecs-strings': 6.7.0(typescript@5.9.3)
+      '@solana/wallet-standard-features': 1.3.0
+      '@solana/wallet-standard-util': 1.1.2
+      '@wallet-standard/core': 1.1.1
+      js-base64: 3.7.8
+    transitivePeerDependencies:
+      - fastestsmallesttextencoderdecoder
+      - typescript
+
   '@solana-mobile/wallet-adapter-mobile@2.2.7(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
       '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.7(typescript@5.9.3)
       '@solana-mobile/mobile-wallet-adapter-protocol-web3js': 2.2.7(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(typescript@5.9.3)
-      '@solana-mobile/wallet-standard-mobile': 0.5.1(typescript@5.9.3)
+      '@solana-mobile/wallet-standard-mobile': 0.5.2(typescript@5.9.3)
       '@solana/wallet-adapter-base': 0.9.27(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))
       '@solana/wallet-standard-features': 1.3.0
       '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)
@@ -8410,9 +8429,9 @@ snapshots:
       - fastestsmallesttextencoderdecoder
       - typescript
 
-  '@solana-mobile/wallet-standard-mobile@0.5.1(typescript@5.9.3)':
+  '@solana-mobile/wallet-standard-mobile@0.5.2(typescript@5.9.3)':
     dependencies:
-      '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.7(typescript@5.9.3)
+      '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.8(typescript@5.9.3)
       '@solana/wallet-standard-chains': 1.1.1
       '@solana/wallet-standard-features': 1.3.0
       '@wallet-standard/base': 1.1.0

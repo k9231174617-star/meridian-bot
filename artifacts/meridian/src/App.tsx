@@ -772,6 +772,10 @@ function App() {
     () => new Set(adapterWallets.map((entry) => entry.adapter.name)),
     [adapterWallets],
   );
+  const mobileWalletAdapterName = useMemo(
+    () => adapterWallets.find((entry) => /mobile wallet adapter/i.test(entry.adapter.name))?.adapter.name ?? "",
+    [adapterWallets],
+  );
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_KEY, lang);
@@ -1347,6 +1351,22 @@ function App() {
     if (walletConnectPendingProvider === providerName) {
       toastMessage(`${providerName} connection is already pending`);
       return;
+    }
+
+    if (isAndroidDevice && mobileWalletAdapterName) {
+      try {
+        setWalletConnectPendingProvider(providerName);
+        setWalletProvider(providerName);
+        select(mobileWalletAdapterName as WalletName<string>);
+        await connect();
+        toastMessage(`${providerName} connection requested`);
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setWalletConnectPendingProvider("");
+        toastMessage(message);
+        return;
+      }
     }
 
     if (providerName === "Phantom" || providerName === "Solflare") {
