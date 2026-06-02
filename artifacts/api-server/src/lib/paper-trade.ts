@@ -160,6 +160,10 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         });
       });
 
+      if (continuous) {
+        return state;
+      }
+
       return activeRun;
     },
     async stop() {
