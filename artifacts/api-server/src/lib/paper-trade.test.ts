@@ -52,7 +52,7 @@ test("paper trade controller starts and completes a bounded session", async () =
   assert.equal(captured?.cwd, "/workspace");
   assert.equal(captured?.env.BOT_STORAGE_DIR, "/workspace/.bot-data/trading-bot");
   assert.equal(captured?.env.BOT_ENABLE_WSS_POOL_WATCHER, "false");
-  assert.equal(captured?.env.BOT_DISCOVERY_BACKFILL_LIMIT, "0");
+  assert.equal(captured?.env.BOT_DISCOVERY_BACKFILL_LIMIT, "1");
   assert.equal(captured?.env.BOT_RPC_URL, "");
   assert.equal(captured?.env.YELLOWSTONE_ENDPOINT, "");
   assert.equal(captured?.env.BOT_PAPER_DEBUG_FORCE_SIGNAL, "true");

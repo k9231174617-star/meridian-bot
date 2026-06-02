@@ -88,7 +88,7 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         ...process.env,
         BOT_STORAGE_DIR: storageDir,
         BOT_ENABLE_WSS_POOL_WATCHER: "false",
-        BOT_DISCOVERY_BACKFILL_LIMIT: "0",
+        BOT_DISCOVERY_BACKFILL_LIMIT: "1",
         YELLOWSTONE_ENDPOINT: "",
         YELLOWSTONE_TOKEN: "",
         BOT_RPC_URL: "",
