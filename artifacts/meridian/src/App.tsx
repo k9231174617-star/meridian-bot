@@ -1137,11 +1137,13 @@ function App() {
   const pnlHistory = analytics?.pnlHistory ?? [];
   const trackedBalanceUsd = Math.max(0, totalLiquidityUsd + totalPnlUsd);
   const activePoolsCount = positions.filter((position) => position.isActive !== false).length || positions.length;
-  const activeSignalsCount = visiblePools.filter((pool) => pool.signalType === PoolSignalType.ENTER).length;
   const discoveryCandidates = discovery?.candidates ?? [];
   const discoveryObservations = discovery?.observations ?? [];
   const discoveryTotals = discovery?.totals ?? { candidates: 0, meteora: 0, raydium: 0, orca: 0, observations: 0, rejected: 0 };
   const recentSignals = signalFeed?.signals ?? [];
+  const activeSignalsCount = visiblePools.length > 0
+    ? visiblePools.filter((pool) => pool.signalType === PoolSignalType.ENTER).length
+    : recentSignals.length;
   const signalCounts = signalFeed?.counts ?? {};
   const topSignalType = Object.entries(signalCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "NONE";
   const botStatus = statusQuery.data;
@@ -1181,8 +1183,14 @@ function App() {
       .slice(0, 3)
       .map((position, index) => ({
         id: `${position.address}-${index}`,
-        wallet: shortAddress(position.address || position.poolAddress),
-        action: position.inRange ? t.connected : t.updated,
+        pool: position.poolName || shortAddress(position.poolAddress),
+        status: position.status === "closed"
+          ? "CLOSED"
+          : position.status === "open"
+            ? "OPEN"
+            : position.inRange
+              ? "OPEN"
+              : "CLOSED",
         amount: formatCurrency(position.liquidityUsd, 0),
         tone: position.pnlUsd >= 0 ? "sm-entered" : "sm-exited",
       }));
@@ -1870,10 +1878,62 @@ function App() {
               </button>
             </div>
           ) : visiblePools.length === 0 ? (
-            <div className="card">
-              <div className="section-label">No pools matched current filters</div>
-              <div className="paper-trade-hint">Try lowering TVL or Jupiter thresholds.</div>
-            </div>
+            recentSignals.length > 0 ? (
+              <div className="space-y-3">
+                <div className="card">
+                  <div className="section-label">No pools matched current filters</div>
+                  <div className="paper-trade-hint">Showing the latest live signals from the bot instead.</div>
+                </div>
+                {recentSignals.slice(0, 5).map((signal) => (
+                  <button
+                    key={signal.id}
+                    type="button"
+                    className="signal-card green dashboard-card-button"
+                    onClick={() => {
+                      const matchingPool = pools.find((pool) => pool.address === signal.poolAddress);
+                      if (matchingPool) {
+                        handlePoolDetail(matchingPool);
+                      } else {
+                        setSelectedPoolAddress(signal.poolAddress);
+                        toastMessage(signal.poolName);
+                      }
+                    }}
+                  >
+                    <div className="signal-top">
+                      <div className="token-info">
+                        <TokenBadge symbol={signal.poolName.slice(0, 3)} colorClass="sol" label={signal.poolName.slice(0, 3)} />
+                        <div>
+                          <div className="token-name" style={{ color: "var(--neon-cyan)" }}>
+                            {signal.type} · {signal.action}
+                          </div>
+                          <div className="token-pair">
+                            {signal.poolName} · {shortAddress(signal.poolAddress)}
+                          </div>
+                        </div>
+                      </div>
+                      <SmallBadge text={signal.confidence >= 0.9 ? "HIGH" : "MID"} tone={signal.confidence >= 0.9 ? "green" : "violet"} />
+                    </div>
+                    <div className="signal-metrics">
+                      <MetricBox compact value={formatCurrency(signal.suggestedCapitalUsd, 1)} label="CAPITAL" valueClass="green" />
+                      <MetricBox compact value={formatPercent(signal.confidence * 100, 0)} label="CONFIDENCE" valueClass="cyan" />
+                      <MetricBox compact value={String(Math.round(signal.severity))} label="SEVERITY" valueClass="orange" />
+                      <MetricBox compact value={String(signal.slippageBps)} label="SLIPPAGE" valueClass="violet" />
+                    </div>
+                    <div className="signal-footer">
+                      <div className="signal-time">{signal.reason[0] ?? "Live signal"}</div>
+                      <div className="enter-btn active" role="presentation">
+                        {t.viewDetail}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="card">
+                <div className="section-label">No pools matched current filters</div>
+                <div className="paper-trade-hint">Try lowering TVL or Jupiter thresholds.</div>
+              </div>
+            )
           ) : visiblePools.map((pool) => {
             const tone = poolTone(pool);
             const badge = pool.signalType === PoolSignalType.ENTER ? t.enter : pool.signalType === PoolSignalType.AVOID ? "AVOID" : t.watch;
@@ -2048,7 +2108,7 @@ function App() {
         </div>
         <div className="card">
           <div className="section-label" style={{ marginBottom: 8 }} id="s-wallet-act">
-            {t.recentWalletActivity}
+            {lang === "ru" ? "⬡ АКТИВНОСТЬ ПОЗИЦИЙ" : "⬡ RECENT POSITION ACTIVITY"}
           </div>
           {positionsLoadError ? (
             <div className="py-4 text-sm text-[var(--neon-red)]">{positionsLoadError}</div>
@@ -2056,13 +2116,13 @@ function App() {
           {poolActivityRows.length > 0 ? (
             poolActivityRows.map((row, index) => (
               <div className="smartmoney-row" key={row.id}>
-                <div className="sm-wallet">{row.wallet}</div>
-                <div className={`sm-action ${index % 2 === 0 ? "sm-entered" : "sm-exited"}`}>{row.action}</div>
+                <div className="sm-wallet">{row.pool}</div>
+                <div className={`sm-action ${index % 2 === 0 ? "sm-entered" : "sm-exited"}`}>{row.status}</div>
                 <div className="sm-amount">{row.amount}</div>
               </div>
             ))
           ) : (
-            <div className="text-sm text-[var(--text-dim)]">{t.noWallet}</div>
+            <div className="text-sm text-[var(--text-dim)]">{lang === "ru" ? "Позиции пока не загружены" : "No positions loaded yet"}</div>
           )}
         </div>
       </div>

@@ -191,9 +191,9 @@ async function loadPositionsFromEventHistory(storageDir: string, limit: number):
 
               const event = parsed.event;
               const data = event.payload?.data ?? {};
-              const signal = (data.signal && typeof data.signal === "object" ? data.signal : {}) as Record<string, unknown>;
-              const intent = (data.intent && typeof data.intent === "object" ? data.intent : {}) as Record<string, unknown>;
-              const execution = (data.execution && typeof data.execution === "object" ? data.execution : {}) as Record<string, unknown>;
+              const signal = (data.signal && typeof data.signal === "object" ? data.signal : {}) as Record<string, any>;
+              const intent = (data.intent && typeof data.intent === "object" ? data.intent : {}) as Record<string, any>;
+              const execution = (data.execution && typeof data.execution === "object" ? data.execution : {}) as Record<string, any>;
               const snapshotPools = Array.isArray(data.snapshot?.pools) ? data.snapshot?.pools ?? [] : [];
               const pool = snapshotPools.find((entry: any) => entry?.address === event.poolAddress || entry?.address === signal.poolAddress);
               const positionAddress = String(intent.id ?? signal.id ?? `${event.poolAddress ?? "pool"}`);
