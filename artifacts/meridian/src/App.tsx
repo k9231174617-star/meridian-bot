@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type WalletName } from "@solana/wallet-adapter-base";
+import { useWallet } from "@solana/wallet-adapter-react";
 import {
   PoolSignalType,
   PoolIlRisk,
@@ -12,7 +14,6 @@ import {
   useGetPrices,
   useHealthCheck,
 } from "@workspace/api-client-react";
-import { Keypair } from "@solana/web3.js";
 import "./dashboard.css";
 
 const PnLChart = lazy(() => import("./components/pnl-chart").then((module) => ({ default: module.PnLChart })));
@@ -658,8 +659,6 @@ function App() {
   const [walletProvider, setWalletProvider] = useState<string>(() => readStorage(PROVIDER_KEY, "Phantom"));
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [walletSecretKey, setWalletSecretKey] = useState("");
-  const [walletImportError, setWalletImportError] = useState("");
   const [chip, setChip] = useState<Chip>(() => readStorage(CHIP_KEY, "all") as Chip);
   const [minTvl, setMinTvl] = useState(() => Number(readStorage(MIN_TVL_KEY, "500000")) || 500000);
   const [minJup, setMinJup] = useState(() => Number(readStorage(MIN_JUP_KEY, "60")) || 60);
@@ -675,10 +674,15 @@ function App() {
     readBool("paper_trade_debug_bypass_risk", true),
   );
   const [enabledDexes, setEnabledDexes] = useState<SupportedDex[]>(["meteora", "raydium", "orca"]);
+  const { select, connect, wallet: activeAdapterWallet, connected: adapterConnected, publicKey: adapterPublicKey, wallets: adapterWallets } = useWallet();
 
   const t = STRINGS[lang];
   const walletValid = walletAddress.trim().length >= 32;
   const canQueryWallet = walletConnected && walletValid;
+  const adapterWalletNames = useMemo<Set<string>>(
+    () => new Set(adapterWallets.map((entry) => entry.adapter.name)),
+    [adapterWallets],
+  );
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_KEY, lang);
@@ -747,6 +751,16 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(CHIP_KEY, chip);
   }, [chip]);
+
+  useEffect(() => {
+    if (!adapterConnected || !adapterPublicKey || !activeAdapterWallet) return;
+
+    const address = adapterPublicKey.toBase58();
+    setWalletAddress(address);
+    setWalletProvider(activeAdapterWallet.adapter.name);
+    setWalletConnected(true);
+    setWalletModalOpen(false);
+  }, [activeAdapterWallet, adapterConnected, adapterPublicKey]);
 
   useEffect(() => {
     if (!agentRunning) return;
@@ -1095,22 +1109,6 @@ function App() {
     discoveryMutation.mutate(normalized);
   }
 
-  function connectWalletByAddress() {
-    if (!walletValid) {
-      toastMessage(t.invalidWallet);
-      return;
-    }
-    setWalletProvider("Manual");
-    setWalletConnected(true);
-    setWalletModalOpen(false);
-    toastMessage(`Manual · ${shortAddress(walletAddress)} connected`);
-  }
-
-  function openWalletImportModal() {
-    setWalletImportError("");
-    setWalletModalOpen(true);
-  }
-
   function resolveInjectedWalletProvider(providerName: WalletOptionName) {
     const injected = window as Window & Record<string, any>;
 
@@ -1128,10 +1126,46 @@ function App() {
     }
   }
 
+  function openWalletWebsite(providerName: WalletOptionName) {
+    const urlByWallet: Record<WalletOptionName, string> = {
+      Phantom: "https://phantom.app/",
+      Solflare: "https://solflare.com/",
+      Backpack: "https://backpack.app/",
+      "OKX Wallet": "https://www.okx.com/web3",
+    };
+
+    window.open(urlByWallet[providerName], "_blank", "noopener,noreferrer");
+  }
+
   async function connectWalletProvider(providerName: WalletOptionName) {
+    if (providerName === "Phantom" || providerName === "Solflare") {
+      if (adapterWalletNames.has(providerName)) {
+        try {
+          select(providerName as WalletName<string>);
+          await connect();
+          toastMessage(`${providerName} connection requested`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (/not ready|not detected|not installed/i.test(message)) {
+            openWalletWebsite(providerName);
+            toastMessage(`Opening ${providerName}`);
+            return;
+          }
+          toastMessage(message);
+          return;
+        }
+      }
+
+      openWalletWebsite(providerName);
+      toastMessage(`Opening ${providerName}`);
+      return;
+    }
+
     const provider = resolveInjectedWalletProvider(providerName);
     if (!provider?.connect) {
-      toastMessage(`${providerName} wallet not detected`);
+      openWalletWebsite(providerName);
+      toastMessage(`Opening ${providerName}`);
       return;
     }
 
@@ -1146,66 +1180,23 @@ function App() {
       setWalletProvider(providerName);
       setWalletConnected(true);
       setWalletModalOpen(false);
-      setWalletImportError("");
       toastMessage(`${providerName} · ${shortAddress(address)} connected`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toastMessage(message);
-    }
-  }
-
-  function decodeSecretKeyInput(value: string): Uint8Array {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error("Secret key is required");
-    }
-
-    if (trimmed.startsWith("[")) {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "number" || !Number.isFinite(item))) {
-        throw new Error("Secret key JSON must be an array of numbers");
+      if (/not ready|not detected|not installed/i.test(message)) {
+        openWalletWebsite(providerName);
+        toastMessage(`Opening ${providerName}`);
+        return;
       }
-      return Uint8Array.from(parsed.map((item) => Number(item)));
-    }
-
-    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
-      return Uint8Array.from(trimmed.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
-    }
-
-    const normalized = trimmed.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = `${normalized}${"=".repeat((4 - (normalized.length % 4 || 4)) % 4)}`;
-    try {
-      const binary = atob(padded);
-      return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    } catch {
-      throw new Error("Secret key must be JSON array, hex, or base64 encoded");
-    }
-  }
-
-  function importSecretWallet() {
-    try {
-      const secretKeyBytes = decodeSecretKeyInput(walletSecretKey);
-      const keypair = Keypair.fromSecretKey(secretKeyBytes);
-      const address = keypair.publicKey.toBase58();
-
-      setWalletAddress(address);
-      setWalletProvider("Secret Key");
-      setWalletConnected(true);
-      setWalletSecretKey("");
-      setWalletImportError("");
-      setWalletModalOpen(false);
-      toastMessage(`Secret key · ${shortAddress(address)} imported`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setWalletImportError(message);
       toastMessage(message);
     }
   }
 
   function disconnectWallet() {
     setWalletConnected(false);
-    setWalletSecretKey("");
-    setWalletImportError("");
+    if (activeAdapterWallet) {
+      void activeAdapterWallet.adapter.disconnect().catch(() => undefined);
+    }
     toastMessage(t.disconnected);
   }
 
@@ -1236,7 +1227,6 @@ function App() {
 
   function handleEnterPool(pool: Pool) {
     if (!walletConnected) {
-      setWalletImportError("");
       setWalletModalOpen(true);
       toastMessage(t.connectHint);
       return;
@@ -2514,39 +2504,6 @@ function App() {
                 {option.recommended ? <div className="wo-badge" id="wm-recommended">{t.recommended}</div> : null}
               </button>
             ))}
-          </div>
-          <div className="wallet-modal-actions">
-            <button className="connect-wallet-btn" type="button" onClick={() => void connectWalletProvider("Phantom")} id="wm-connect-phantom">
-              {t.connectPhantom}
-            </button>
-            <button className="connect-wallet-btn wallet-secondary-btn" type="button" onClick={openWalletImportModal} id="wm-import-secret">
-              {t.importSecretKey}
-            </button>
-          </div>
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div className="section-label mb-2">{t.walletAddress}</div>
-            <input
-              className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
-              placeholder="Paste Solana wallet address"
-              value={walletAddress}
-              onChange={(event) => setWalletAddress(event.target.value.trim())}
-            />
-            <button className="connect-wallet-btn" style={{ marginTop: 10, marginBottom: 0 }} onClick={connectWalletByAddress} type="button" id="wm-connect-by-address">
-              {t.connectByAddress}
-            </button>
-          </div>
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div className="section-label mb-2">{t.secretKey}</div>
-            <textarea
-              className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
-              placeholder={t.secretKeyHint}
-              value={walletSecretKey}
-              rows={4}
-              onChange={(event) => setWalletSecretKey(event.target.value)}
-            />
-            {walletImportError ? (
-              <div className="mt-2 text-xs text-[var(--neon-orange)]">{walletImportError}</div>
-            ) : null}
           </div>
           <button className="modal-cancel" style={{ marginTop: 8 }} onClick={() => setWalletModalOpen(false)} type="button" id="wm-cancel">
             {t.cancel}
