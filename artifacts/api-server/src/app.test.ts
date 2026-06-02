@@ -509,7 +509,7 @@ test("bot controls persist auto trading state", async () => {
       const initial = await fetch(`${baseUrl}/api/bot/controls`);
       assert.equal(initial.status, 200);
       const initialBody = await initial.json() as { autoTradingEnabled: boolean; updatedAt: string };
-      assert.equal(initialBody.autoTradingEnabled, true);
+      assert.equal(initialBody.autoTradingEnabled, false);
 
       const update = await fetch(`${baseUrl}/api/bot/controls`, {
         method: "PATCH",

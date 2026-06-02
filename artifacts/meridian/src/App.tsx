@@ -12,6 +12,7 @@ import {
   useGetPrices,
   useHealthCheck,
 } from "@workspace/api-client-react";
+import { Keypair } from "@solana/web3.js";
 import "./dashboard.css";
 
 const PnLChart = lazy(() => import("./components/pnl-chart").then((module) => ({ default: module.PnLChart })));
@@ -25,6 +26,12 @@ type WalletRow = {
   symbol: string;
   amount: number;
   valueUsd: number;
+};
+
+type PhantomProvider = {
+  isPhantom?: boolean;
+  publicKey?: { toBase58(): string };
+  connect: (options?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey?: { toBase58(): string } } | void>;
 };
 
 type StringMap = Record<string, string>;
@@ -196,6 +203,8 @@ const STRINGS: Record<Language, StringMap> = {
     wallet: "WALLET",
     totalBalance: "TOTAL BALANCE",
     connectWallet: "CONNECT WALLET",
+    connectPhantom: "CONNECT PHANTOM",
+    importSecretKey: "IMPORT SECRET KEY",
     disconnectWallet: "DISCONNECT WALLET",
     deposit: "DEPOSIT",
     withdraw: "WITHDRAW",
@@ -238,10 +247,13 @@ const STRINGS: Record<Language, StringMap> = {
     swapMsg: "Opening swap...",
     connectHint: "Connect a Solana wallet to continue",
     walletAddress: "WALLET ADDRESS",
+    secretKey: "SECRET KEY",
+    secretKeyHint: "JSON array, hex or base64 secret key",
+    connectByAddress: "CONNECT BY ADDRESS",
     walletProvider: "WALLET PROVIDER",
     connect: "CONNECT",
     cancel: "CANCEL",
-    selectWallet: "Select a Solana wallet to connect",
+    selectWallet: "Connect wallet",
     recommended: "RECOMMENDED",
     updated: "UPDATED",
     openPool: "Open pool detail",
@@ -306,6 +318,8 @@ const STRINGS: Record<Language, StringMap> = {
     wallet: "КОШЕЛЁК",
     totalBalance: "ОБЩИЙ БАЛАНС",
     connectWallet: "ПОДКЛЮЧИТЬ КОШЕЛЁК",
+    connectPhantom: "PHANTOM",
+    importSecretKey: "СЕКРЕТНЫЙ КЛЮЧ",
     disconnectWallet: "ОТКЛЮЧИТЬ КОШЕЛЁК",
     deposit: "ПОПОЛНИТЬ",
     withdraw: "ВЫВЕСТИ",
@@ -348,10 +362,13 @@ const STRINGS: Record<Language, StringMap> = {
     swapMsg: "Открываю обмен...",
     connectHint: "Подключите Solana кошелёк, чтобы продолжить",
     walletAddress: "АДРЕС КОШЕЛЬКА",
+    secretKey: "СЕКРЕТНЫЙ КЛЮЧ",
+    secretKeyHint: "JSON массив, hex или base64 ключ",
+    connectByAddress: "ПО АДРЕСУ",
     walletProvider: "WALLET PROVIDER",
     connect: "ПОДКЛЮЧИТЬ",
     cancel: "ОТМЕНА",
-    selectWallet: "Выберите Solana кошелёк для подключения",
+    selectWallet: "Подключение кошелька",
     recommended: "РЕКОМЕНДУЕТСЯ",
     updated: "ОБНОВЛЕНО",
     openPool: "Открыть детали пула",
@@ -633,6 +650,8 @@ function App() {
   const [walletProvider, setWalletProvider] = useState<string>(() => readStorage(PROVIDER_KEY, "Phantom"));
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [walletSecretKey, setWalletSecretKey] = useState("");
+  const [walletImportError, setWalletImportError] = useState("");
   const [chip, setChip] = useState<Chip>(() => readStorage(CHIP_KEY, "all") as Chip);
   const [minTvl, setMinTvl] = useState(() => Number(readStorage(MIN_TVL_KEY, "500000")) || 500000);
   const [minJup, setMinJup] = useState(() => Number(readStorage(MIN_JUP_KEY, "60")) || 60);
@@ -937,7 +956,7 @@ function App() {
   const discovery = discoveryQuery.data;
   const signalFeed = signalFeedQuery.data;
   const botControls = botControlsQuery.data;
-  const autoTradingEnabled = botControls?.autoTradingEnabled ?? true;
+  const autoTradingEnabled = botControls?.autoTradingEnabled ?? false;
   const previousPaperTradeStatus = useRef<PaperTradeStatus["status"] | undefined>(undefined);
   useEffect(() => {
     if (discovery?.settings.enabledDexes) {
@@ -1068,19 +1087,100 @@ function App() {
     discoveryMutation.mutate(normalized);
   }
 
-  function connectWallet(providerOverride?: string) {
+  function connectWalletByAddress() {
     if (!walletValid) {
       toastMessage(t.invalidWallet);
       return;
     }
-    if (providerOverride) setWalletProvider(providerOverride);
+    setWalletProvider("Manual");
     setWalletConnected(true);
-    toastMessage(`${providerOverride ?? walletProvider} · ${shortAddress(walletAddress)} connected`);
     setWalletModalOpen(false);
+    toastMessage(`Manual · ${shortAddress(walletAddress)} connected`);
+  }
+
+  function openWalletImportModal() {
+    setWalletImportError("");
+    setWalletModalOpen(true);
+  }
+
+  async function connectPhantomWallet() {
+    const provider = (window as Window & { solana?: PhantomProvider }).solana;
+    if (!provider?.connect) {
+      toastMessage("Phantom wallet not detected");
+      return;
+    }
+
+    try {
+      const response = await provider.connect({ onlyIfTrusted: false });
+      const address = response?.publicKey?.toBase58() ?? provider.publicKey?.toBase58();
+      if (!address) {
+        throw new Error("Phantom did not return a wallet address");
+      }
+
+      setWalletAddress(address);
+      setWalletProvider("Phantom");
+      setWalletConnected(true);
+      setWalletModalOpen(false);
+      setWalletImportError("");
+      toastMessage(`Phantom · ${shortAddress(address)} connected`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toastMessage(message);
+    }
+  }
+
+  function decodeSecretKeyInput(value: string): Uint8Array {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error("Secret key is required");
+    }
+
+    if (trimmed.startsWith("[")) {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "number" || !Number.isFinite(item))) {
+        throw new Error("Secret key JSON must be an array of numbers");
+      }
+      return Uint8Array.from(parsed.map((item) => Number(item)));
+    }
+
+    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
+      return Uint8Array.from(trimmed.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? []);
+    }
+
+    const normalized = trimmed.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = `${normalized}${"=".repeat((4 - (normalized.length % 4 || 4)) % 4)}`;
+    try {
+      const binary = atob(padded);
+      return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    } catch {
+      throw new Error("Secret key must be JSON array, hex, or base64 encoded");
+    }
+  }
+
+  function importSecretWallet() {
+    try {
+      const secretKeyBytes = decodeSecretKeyInput(walletSecretKey);
+      const keypair = Keypair.fromSecretKey(secretKeyBytes);
+      const address = keypair.publicKey.toBase58();
+
+      setWalletAddress(address);
+      setWalletProvider("Secret Key");
+      setWalletConnected(true);
+      setWalletSecretKey("");
+      setWalletImportError("");
+      setWalletModalOpen(false);
+      toastMessage(`Secret key · ${shortAddress(address)} imported`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWalletImportError(message);
+      toastMessage(message);
+    }
   }
 
   function disconnectWallet() {
     setWalletConnected(false);
+    setWalletSecretKey("");
+    setWalletImportError("");
     toastMessage(t.disconnected);
   }
 
@@ -1111,6 +1211,7 @@ function App() {
 
   function handleEnterPool(pool: Pool) {
     if (!walletConnected) {
+      setWalletImportError("");
       setWalletModalOpen(true);
       toastMessage(t.connectHint);
       return;
@@ -1171,12 +1272,6 @@ function App() {
     return walletConnected ? shortAddress(walletAddress) : t.noWallet;
   }
 
-  function submitWalletProvider(provider: string) {
-    setWalletProvider(provider);
-    connectWallet(provider);
-  }
-
-  const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
   const paperTradeStatus = paperTradeStatusQuery.data;
   const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
   const liveTradingLabel = autoTradingEnabled ? "ENABLED" : "DISABLED";
@@ -1943,13 +2038,21 @@ function App() {
               onChange={(event) => setWalletAddress(event.target.value.trim())}
             />
           </div>
-          <button className="connect-wallet-btn" onClick={() => setWalletModalOpen(true)} type="button">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="2" y="7" width="20" height="14" rx="2" />
-              <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-              <circle cx="12" cy="14" r="2" />
-            </svg>
-            <span id="w-connect-btn">{t.connectWallet}</span>
+          <div className="wallet-connect-actions">
+            <button className="connect-wallet-btn" onClick={() => void connectPhantomWallet()} type="button" id="w-connect-phantom">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="7" width="20" height="14" rx="2" />
+                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+                <circle cx="12" cy="14" r="2" />
+              </svg>
+              <span>{t.connectPhantom}</span>
+            </button>
+            <button className="connect-wallet-btn wallet-secondary-btn" onClick={openWalletImportModal} type="button" id="w-import-secret">
+              <span>{t.importSecretKey}</span>
+            </button>
+          </div>
+          <button className="modal-cancel" style={{ marginTop: 10 }} onClick={connectWalletByAddress} type="button" id="w-connect-btn">
+            {t.connectByAddress}
           </button>
         </div>
 
@@ -2374,32 +2477,34 @@ function App() {
             {t.selectWallet}
           </div>
           <div className="modal-sub" id="wm-sub">
-            {t.walletAddress}
+            {t.secretKeyHint}
+          </div>
+          <div className="wallet-modal-actions">
+            <button className="connect-wallet-btn" type="button" onClick={() => void connectPhantomWallet()} id="wm-connect-phantom">
+              {t.connectPhantom}
+            </button>
+            <button className="connect-wallet-btn wallet-secondary-btn" type="button" onClick={importSecretWallet} id="wm-import-secret">
+              {t.importSecretKey}
+            </button>
           </div>
           <div className="card" style={{ marginBottom: 12 }}>
-            <div className="section-label mb-2">{t.walletAddress}</div>
-            <input
+            <div className="section-label mb-2">{t.secretKey}</div>
+            <textarea
               className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
-              placeholder="Paste Solana wallet address"
-              value={walletAddress}
-              onChange={(event) => setWalletAddress(event.target.value.trim())}
+              placeholder={t.secretKeyHint}
+              value={walletSecretKey}
+              rows={4}
+              onChange={(event) => setWalletSecretKey(event.target.value)}
             />
+            {walletImportError ? (
+              <div className="mt-2 text-xs text-[var(--neon-orange)]">{walletImportError}</div>
+            ) : null}
           </div>
-          {providerOptions.map((provider, index) => (
-            <button className="wallet-option dashboard-card-button" key={provider} type="button" onClick={() => submitWalletProvider(provider)}>
-              <div className="wo-icon">{index === 0 ? "👻" : index === 1 ? "☀️" : index === 2 ? "🎒" : "⭕"}</div>
-              <div>
-                <div className="wo-name">{provider}</div>
-                <div className="wo-sub">{index === 0 ? "Most popular Solana wallet" : index === 1 ? "Native Solana wallet" : index === 2 ? "xNFT wallet by Coral" : "Multi-chain wallet"}</div>
-              </div>
-              {index === 0 ? <div className="wo-badge" id="wm-recommended">{t.recommended}</div> : null}
-            </button>
-          ))}
-          <button className="modal-cancel" onClick={() => setWalletModalOpen(false)} type="button" id="wm-cancel">
-            {t.cancel}
+          <button className="connect-wallet-btn" style={{ marginTop: 10 }} onClick={importSecretWallet} type="button" id="wm-connect-secret">
+            {t.importSecretKey}
           </button>
-          <button className="connect-wallet-btn" style={{ marginTop: 10 }} onClick={() => connectWallet()} type="button">
-            {t.connect}
+          <button className="modal-cancel" style={{ marginTop: 8 }} onClick={() => setWalletModalOpen(false)} type="button" id="wm-cancel">
+            {t.cancel}
           </button>
         </div>
       </div>

@@ -7,7 +7,7 @@ export type BotControls = {
 };
 
 const DEFAULT_CONTROLS: BotControls = {
-  autoTradingEnabled: true,
+  autoTradingEnabled: false,
   updatedAt: new Date().toISOString(),
 };
 
@@ -16,7 +16,7 @@ export async function loadBotControls(storageDir = resolveStorageDir()): Promise
     const raw = await readFile(resolveControlsPath(storageDir), "utf8");
     const parsed = JSON.parse(raw) as Partial<BotControls>;
     return {
-      autoTradingEnabled: parsed.autoTradingEnabled !== false,
+      autoTradingEnabled: parsed.autoTradingEnabled === true,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
     };
   } catch {
