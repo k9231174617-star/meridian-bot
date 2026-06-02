@@ -16,24 +16,18 @@ router.get("/", async (req, res) => {
     }
 
     const url = `${METEORA_API}/user/${wallet}/positions`;
-    const r = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(12000),
-    });
-
-    if (!r.ok) {
-      if (r.status === 404) {
-        return res.json({
-          positions: [],
-          totalLiquidityUsd: 0,
-          totalFeesEarned: 0,
-          totalPnlUsd: 0,
-        });
+    let raw: any = null;
+    try {
+      const r = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (r.ok) {
+        raw = await r.json() as any;
       }
-      throw new Error(`Meteora API error: ${r.status}`);
+    } catch {
+      raw = null;
     }
-
-    const raw = await r.json() as any;
 
     const positions = [];
     let totalLiquidityUsd = 0;
