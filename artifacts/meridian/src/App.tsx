@@ -1148,6 +1148,15 @@ function App() {
   const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
   const paperTradeStatus = paperTradeStatusQuery.data;
   const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
+  const liveTradingLabel = autoTradingEnabled ? "ENABLED" : "DISABLED";
+  const liveTradingTone = autoTradingEnabled ? "running" : "failed";
+  const paperSessionSummary = paperTradeStatus?.status === "running"
+    ? `PID ${paperTradeStatus.pid ?? "?"} · cycles ${paperTradeStatus.request?.cycles ?? paperTradeCycles}`
+    : paperTradeStatus?.status === "completed"
+      ? `Completed ${paperTradeStatus.endedAt ? formatRelativeShort(paperTradeStatus.endedAt) : "recently"}`
+      : paperTradeStatus?.status === "failed"
+        ? `Failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
+        : "No active test session";
   const runSummary: RunSummary = botStatus?.lastRun?.summary ?? {};
   const summaryExecutions = runSummary.executions ?? ((runSummary.fills ?? 0) + (runSummary.failed ?? 0));
   const apiHealthy = healthQuery.data?.status === "ok";
@@ -1259,12 +1268,15 @@ function App() {
             </div>
           </div>
           <div className="runtime-control-bar">
-            <div className="runtime-control-group">
+            <div className="runtime-control-group runtime-control-live">
               <div className="runtime-control-label">AUTO TRADING</div>
+              <div className={`runtime-control-pill ${liveTradingTone}`}>{liveTradingLabel}</div>
               <div className="runtime-control-sub">
+                Live wallet: {liveWalletLabel}
+                <br />
                 {autoTradingEnabled
-                  ? `Live execution enabled · wallet ${liveWalletLabel}`
-                  : `Live execution disabled · wallet ${liveWalletLabel}`}
+                  ? "Live execution is allowed and will use the connected wallet."
+                  : "Live execution is blocked. Bot still scans and scores signals."}
               </div>
               <button
                 className={`connect-wallet-btn runtime-control-button ${autoTradingEnabled ? "active" : "inactive"}`}
@@ -1279,18 +1291,15 @@ function App() {
                     : "AUTO TRADING: OFF"}
               </button>
             </div>
-            <div className="runtime-control-group">
+            <div className="runtime-control-group runtime-control-paper">
               <div className="runtime-control-label">PAPER TRADING</div>
+              <div className={`runtime-control-pill ${paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping" ? "running" : paperTradeStatus?.status === "failed" ? "failed" : "completed"}`}>
+                {paperTradeStatus?.status?.toUpperCase() ?? "IDLE"}
+              </div>
               <div className="runtime-control-sub">
-                {paperTradeStatus?.status === "running"
-                  ? `Test session running · PID ${paperTradeStatus.pid ?? "?"}`
-                  : paperTradeStatus?.status === "stopping"
-                    ? "Stopping current test session..."
-                  : paperTradeStatus?.status === "completed"
-                    ? "Last paper session completed"
-                    : paperTradeStatus?.status === "failed"
-                      ? `Last paper session failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
-                      : "Bounded test mode for data collection"}
+                {paperSessionSummary}
+                <br />
+                Bounded test mode for data collection and signal history.
               </div>
               <button
                 className={`paper-trade-stop-button runtime-control-button ${paperTradeRunning ? "active" : "inactive"}`}
@@ -1320,13 +1329,15 @@ function App() {
               <div>
                 <div className="paper-trade-label">PAPER DATA SESSION</div>
                 <div className="paper-trade-sub">
+                  Source: {botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}
+                  <br />
                   {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
-                    ? `Paper debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+                    ? "Debug mode active for data collection."
                     : paperTradeRunning
-                      ? `Paper session is collecting data · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+                      ? "Paper session is collecting data."
                       : autoTradingEnabled
-                        ? `Live trading ready · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-                        : "Live trading disabled · bot scans but does not execute live intents"}
+                        ? "Live trading ready."
+                        : "Live trading disabled."}
                 </div>
               </div>
               <div className={`paper-trade-pill ${paperTradeStatus?.status ?? "idle"}`}>
