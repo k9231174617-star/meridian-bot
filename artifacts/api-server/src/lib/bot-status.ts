@@ -25,6 +25,7 @@ export type BotStatusResponse = {
     status: "running" | "completed" | "failed";
     mode?: string;
     provider?: string;
+    walletAddress?: string;
     startedAt?: string;
     endedAt?: string;
     summary?: Record<string, unknown>;
@@ -50,6 +51,7 @@ export async function loadBotStatus(storageDir = resolveStorageDir()) : Promise<
       status: (lastFinish?.status ?? "running") as "running" | "completed" | "failed",
       mode: String(lastStart.config.mode ?? ""),
       provider: String(lastStart.config.provider ?? "") || undefined,
+      walletAddress: String(lastStart.config.walletAddress ?? "") || undefined,
       startedAt: lastStart.startedAt,
       endedAt: lastFinish?.endedAt,
       summary: lastFinish?.summary,

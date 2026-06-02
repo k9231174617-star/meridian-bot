@@ -10,7 +10,7 @@ test("loadBotStatus reads last run and recent alerts", async () => {
   await writeFile(
     path.join(dir, "runs.jsonl"),
     [
-      JSON.stringify({ kind: "run_start", runId: 1, startedAt: "2026-06-01T00:00:00.000Z", config: { mode: "live", provider: "direct" } }),
+      JSON.stringify({ kind: "run_start", runId: 1, startedAt: "2026-06-01T00:00:00.000Z", config: { mode: "live", provider: "direct", walletAddress: "So11111111111111111111111111111111111111112" } }),
       JSON.stringify({ kind: "run_finish", runId: 1, status: "completed", summary: { snapshots: 3, signals: 1, approved: 1, fills: 1, executions: 1 }, endedAt: "2026-06-01T00:01:00.000Z" }),
     ].join("\n"),
     "utf8",
@@ -29,6 +29,7 @@ test("loadBotStatus reads last run and recent alerts", async () => {
   assert.equal(status.lastRun?.status, "completed");
   assert.equal(status.lastRun?.mode, "live");
   assert.equal(status.lastRun?.provider, "direct");
+  assert.equal(status.lastRun?.walletAddress, "So11111111111111111111111111111111111111112");
   assert.equal(status.lastRun?.summary?.snapshots, 3);
   assert.equal(status.lastRun?.summary?.executions, 1);
   assert.equal(status.totals.runsStarted, 1);

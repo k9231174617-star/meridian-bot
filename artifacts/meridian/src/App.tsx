@@ -49,6 +49,7 @@ type BotStatus = {
     status: "running" | "completed" | "failed";
     mode?: string;
     provider?: string;
+    walletAddress?: string;
     startedAt?: string;
     endedAt?: string;
     summary?: RunSummary;
@@ -917,9 +918,6 @@ function App() {
   const botControls = botControlsQuery.data;
   const autoTradingEnabled = botControls?.autoTradingEnabled ?? true;
   useEffect(() => {
-    setAutoOpen(autoTradingEnabled);
-  }, [autoTradingEnabled]);
-  useEffect(() => {
     if (discovery?.settings.enabledDexes) {
       setEnabledDexes(discovery.settings.enabledDexes);
     }
@@ -940,6 +938,9 @@ function App() {
   const recentSignals = signalFeed?.signals ?? [];
   const signalCounts = signalFeed?.counts ?? {};
   const topSignalType = Object.entries(signalCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "NONE";
+  const botStatus = statusQuery.data;
+  const liveWalletAddress = botStatus?.lastRun?.walletAddress ?? "";
+  const liveWalletLabel = liveWalletAddress ? shortAddress(liveWalletAddress) : "not configured";
 
   const sortedPositions = useMemo(
     () => [...positions].sort((a, b) => b.liquidityUsd - a.liquidityUsd),
@@ -1145,7 +1146,6 @@ function App() {
   }
 
   const providerOptions = ["Phantom", "Solflare", "Backpack", "OKX Wallet"];
-  const botStatus = statusQuery.data;
   const paperTradeStatus = paperTradeStatusQuery.data;
   const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
   const runSummary: RunSummary = botStatus?.lastRun?.summary ?? {};
@@ -1270,17 +1270,44 @@ function App() {
           <div className="paper-trade-control">
             <div className="paper-trade-row">
               <div>
-                <div className="paper-trade-label">Paper trading</div>
+                <div className="paper-trade-label">AUTO TRADING</div>
+                <div className="paper-trade-sub">
+                  {autoTradingEnabled
+                    ? `Live execution enabled · wallet ${liveWalletLabel}`
+                    : `Live execution disabled · wallet ${liveWalletLabel}`}
+                </div>
+              </div>
+              <div className={`paper-trade-pill ${autoTradingEnabled ? "running" : "failed"}`}>
+                {autoTradingEnabled ? "LIVE ON" : "LIVE OFF"}
+              </div>
+            </div>
+            <div className="paper-trade-row paper-trade-row-controls">
+              <button
+                className={`connect-wallet-btn paper-trade-button ${autoTradingEnabled ? "active" : "inactive"}`}
+                type="button"
+                onClick={toggleAutoTrading}
+                disabled={botControlsMutation.isPending}
+              >
+                {botControlsMutation.isPending
+                  ? "UPDATING..."
+                  : autoTradingEnabled
+                    ? "AUTO TRADING: ON"
+                    : "AUTO TRADING: OFF"}
+              </button>
+            </div>
+            <div className="paper-trade-row" style={{ marginTop: 12 }}>
+              <div>
+                <div className="paper-trade-label">PAPER TRADING</div>
                 <div className="paper-trade-sub">
                   {paperTradeStatus?.status === "running"
-                    ? `Running · PID ${paperTradeStatus.pid ?? "?"}`
+                    ? `Test session running · PID ${paperTradeStatus.pid ?? "?"}`
                     : paperTradeStatus?.status === "stopping"
-                      ? "Stopping current run..."
+                      ? "Stopping current test session..."
                     : paperTradeStatus?.status === "completed"
-                      ? "Last paper run completed"
+                      ? "Last paper session completed"
                       : paperTradeStatus?.status === "failed"
-                        ? `Last paper run failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
-                        : "Ready to start a bounded paper session"}
+                        ? `Last paper session failed${paperTradeStatus.error ? ` · ${paperTradeStatus.error}` : ""}`
+                        : "Bounded test mode for data collection"}
                 </div>
               </div>
               <div className={`paper-trade-pill ${paperTradeStatus?.status ?? "idle"}`}>
@@ -1316,18 +1343,6 @@ function App() {
                 <span>Bypass risk gates</span>
               </label>
               <button
-                className={`connect-wallet-btn paper-trade-button ${autoTradingEnabled ? "active" : "inactive"}`}
-                type="button"
-                onClick={toggleAutoTrading}
-                disabled={botControlsMutation.isPending}
-              >
-                {botControlsMutation.isPending
-                  ? "UPDATING..."
-                  : autoTradingEnabled
-                    ? "AUTOTRADING: ON"
-                    : "AUTOTRADING: OFF"}
-              </button>
-              <button
                 className={`paper-trade-stop-button ${paperTradeRunning ? "active" : "inactive"}`}
                 type="button"
                 onClick={startPaperTrade}
@@ -1342,10 +1357,12 @@ function App() {
             </div>
 	        <div className="paper-trade-hint">
 	          {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
-	            ? `Debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-	            : autoTradingEnabled
-	              ? `Real signal mode · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-	              : "Auto trading disabled · bot scans but does not execute live intents"}
+	            ? `Paper debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+	            : paperTradeRunning
+	              ? `Paper session is collecting data · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+	              : autoTradingEnabled
+	                ? `Live trading ready · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+	                : "Live trading disabled · bot scans but does not execute live intents"}
 	        </div>
 	      </div>
 	    </div>
@@ -2029,7 +2046,8 @@ function App() {
             </div>
             <label className="toggle-switch">
               <input type="checkbox" checked={autoOpen} onChange={() => {
-                toggleAutoTrading();
+                setAutoOpen((current) => !current);
+                toastMessage(t.settingChanged);
               }} />
               <span className="toggle-slider" />
             </label>
