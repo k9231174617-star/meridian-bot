@@ -37,12 +37,18 @@ type OrchestrationStats = {
   lastEventAt?: string;
 };
 
+type QueuedEvent = {
+  event: BotEvent;
+  publish: boolean;
+};
+
 export class BotOrchestrator {
   private readonly wssWatcher: WssPoolWatcher;
   private readonly geyserClient: GeyserClient;
   private readonly hookHandlers = new Map<BotEvent["type"], OrchestratorHook[]>();
-  private readonly eventQueue: BotEvent[] = [];
+  private readonly eventQueue: QueuedEvent[] = [];
   private readonly recentEvents = new Map<string, number>();
+  private readonly busListeners: Array<() => void> = [];
   private stats: OrchestrationStats = {
     eventsEmitted: 0,
     eventsByType: {},
@@ -73,6 +79,7 @@ export class BotOrchestrator {
     this.started = true;
     this.stats.startedAt = new Date().toISOString();
     this.bindHooks(hooks);
+    this.bindEventBus();
 
     if (this.options.enableWssPoolWatcher ?? this.options.wss?.enabled) {
       this.stopWss = await this.wssWatcher.start();
@@ -95,6 +102,14 @@ export class BotOrchestrator {
     this.eventQueue.length = 0;
     this.hookHandlers.clear();
     this.recentEvents.clear();
+    while (this.busListeners.length > 0) {
+      const remove = this.busListeners.pop();
+      try {
+        remove?.();
+      } catch {
+        // ignore listener shutdown errors
+      }
+    }
     this.started = false;
   }
 
@@ -326,7 +341,39 @@ export class BotOrchestrator {
     }
   }
 
+  private bindEventBus() {
+    const eventTypes: BotEvent["type"][] = [
+      "pool:new",
+      "pool:tvl_drop",
+      "pool:volume_spike",
+      "wallet:dev_swap",
+      "wallet:whale_move",
+      "token:mint_active",
+      "token:rug_signal",
+      "token:migrate",
+      "sniper:detected",
+      "position:open",
+      "position:close",
+      "fee:accumulated",
+      "social:velocity_spike",
+      "phantom:attacked",
+    ];
+
+    for (const eventType of eventTypes) {
+      const listener = (event: BotEvent) => {
+        if (!isStreamEvent(event)) return;
+        this.enqueue(event, false);
+      };
+      eventBus.on(eventType, listener);
+      this.busListeners.push(() => eventBus.off(eventType, listener));
+    }
+  }
+
   private emit(event: BotEvent) {
+    this.enqueue(event, true);
+  }
+
+  private enqueue(event: BotEvent, publish: boolean) {
     this.pruneRecentEvents();
     const key = this.eventKey(event);
     const now = Date.now();
@@ -348,7 +395,7 @@ export class BotOrchestrator {
       return;
     }
 
-    this.eventQueue.push(event);
+    this.eventQueue.push({ event, publish });
     this.stats.eventsEmitted += 1;
     this.stats.eventsByType[event.type] = (this.stats.eventsByType[event.type] ?? 0) + 1;
     this.stats.lastEventAt = new Date(event.ts).toISOString();
@@ -360,9 +407,12 @@ export class BotOrchestrator {
     this.processingQueue = true;
     try {
       while (this.eventQueue.length > 0) {
-        const event = this.eventQueue.shift();
-        if (!event) continue;
-        eventBus.emit(event.type, event);
+        const queued = this.eventQueue.shift();
+        if (!queued) continue;
+        const { event, publish } = queued;
+        if (publish) {
+          eventBus.emit(event.type, event);
+        }
         const handlers = this.hookHandlers.get(event.type);
         if (!handlers || handlers.length === 0) continue;
         for (const handler of handlers) {
@@ -391,6 +441,11 @@ export class BotOrchestrator {
     const walletAddress = event.walletAddress ?? "";
     return [event.type, poolAddress, tokenMint, walletAddress, stableStringify(event.data)].join("|");
   }
+}
+
+function isStreamEvent(event: BotEvent) {
+  const source = event.data.source;
+  return source === "wss" || source === "geyser";
 }
 
 function computeOverlap(left: string[], right: string[]) {

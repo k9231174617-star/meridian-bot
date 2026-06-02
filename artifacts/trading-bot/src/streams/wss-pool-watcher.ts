@@ -58,7 +58,7 @@ export class WssPoolWatcher {
     return {
       type: "pool:new",
       ts: Date.now(),
-      poolAddress: event.programIds[0],
+      poolAddress: event.programIds[0] ?? event.signature,
       data: {
         signature: event.signature,
         detectedAt: event.detectedAt,
