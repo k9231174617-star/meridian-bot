@@ -1304,73 +1304,17 @@ function App() {
     }
   }
 
-  function buildMobileWalletConnectUrl(providerName: WalletOptionName) {
-    const session = walletConnectSessionRef.current;
-    if (!session?.publicKeyBase58) {
-      throw new Error("Wallet connection session is still preparing");
-    }
-
-    const appUrl = encodeURIComponent(window.location.origin);
-    const redirectLink = encodeURIComponent(window.location.href);
-    const cluster = "mainnet-beta";
-
-    switch (providerName) {
-      case "Phantom":
-        return buildWalletLaunchUrl({
-          httpsUrl: `https://phantom.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}`,
-          androidPackage: "app.phantom",
-        });
-      case "Solflare":
-        return buildWalletLaunchUrl({
-          httpsUrl: `https://solflare.com/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`,
-          androidPackage: "com.solflare.mobile",
-        });
-      case "Backpack":
-        return buildWalletLaunchUrl({
-          httpsUrl: `https://backpack.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`,
-          androidPackage: "app.backpack.mobile",
-        });
-      case "OKX Wallet": {
-        const okxDeepLink = `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(window.location.href)}`;
-        if (isAndroidDevice) {
-          return `intent://wallet/dapp/url?dappUrl=${encodeURIComponent(window.location.href)}#Intent;scheme=okx;package=com.okx.wallet;S.browser_fallback_url=${encodeURIComponent(`https://web3.okx.com/download?deeplink=${encodeURIComponent(okxDeepLink)}`)};end`;
-        }
-        return okxDeepLink;
-      }
-      default:
-        return window.location.href;
-    }
-  }
-
-  function buildWalletLaunchUrl({
-    httpsUrl,
-    androidPackage,
-  }: {
-    httpsUrl: string;
-    androidPackage: string;
-  }) {
-    if (isIosDevice) {
-      return httpsUrl;
-    }
-
-    if (isAndroidDevice) {
-      const intentTarget = httpsUrl.replace(/^https?:\/\//, "");
-      return `intent://${intentTarget}#Intent;scheme=https;package=${androidPackage};S.browser_fallback_url=${encodeURIComponent(httpsUrl)};end`;
-    }
-
-    return httpsUrl;
-  }
-
   async function connectWalletProvider(providerName: WalletOptionName) {
     if (walletConnectPendingProvider === providerName) {
       toastMessage(`${providerName} connection is already pending`);
       return;
     }
 
+    setWalletConnectPendingProvider(providerName);
+
     const provider = resolveInjectedWalletProvider(providerName);
     if (provider?.connect) {
       try {
-        setWalletConnectPendingProvider(providerName);
         const response = await provider.connect({ onlyIfTrusted: false });
         const address = response?.publicKey?.toBase58() ?? provider.publicKey?.toBase58();
         if (!address) {
@@ -1391,29 +1335,23 @@ function App() {
     }
 
     try {
-      if (isAndroidDevice && mobileWalletAdapterName) {
-        setWalletConnectPendingProvider(providerName);
-        setWalletProvider(providerName);
-        select(mobileWalletAdapterName as WalletName<string>);
-        await connect();
-        toastMessage(`${providerName} connection requested`);
-        return;
-      }
-
       if (providerName === "Phantom" || providerName === "Solflare") {
         if (adapterWalletNames.has(providerName)) {
           select(providerName as WalletName<string>);
-          setWalletConnectPendingProvider(providerName);
           await connect();
           toastMessage(`${providerName} connection requested`);
           return;
         }
       }
 
-      setWalletConnectPendingProvider(providerName);
-      const url = buildMobileWalletConnectUrl(providerName);
-      window.location.href = url;
-      toastMessage(`Opening ${providerName}`);
+      if (isAndroidDevice && mobileWalletAdapterName) {
+        select(mobileWalletAdapterName as WalletName<string>);
+        await connect();
+        toastMessage(`${providerName} connection requested`);
+        return;
+      }
+
+      throw new Error(`${providerName} is not available in this browser`);
     } catch (error) {
       setWalletConnectPendingProvider("");
       toastMessage(error instanceof Error ? error.message : String(error));
