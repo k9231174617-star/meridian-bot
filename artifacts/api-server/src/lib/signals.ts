@@ -91,7 +91,14 @@ export async function loadRecentSignals(storageDir = resolveStorageDir(), limit 
 function isDemoSignal(signal: RecentSignalRecord): boolean {
   const poolName = signal.poolName.trim().toUpperCase();
   const poolAddress = signal.poolAddress.trim().toUpperCase();
-  return signal.id.startsWith("demo-") || poolName.includes("UI TEST / MERIDIAN") || poolAddress.startsWith("DEMO");
+  return (
+    signal.id.startsWith("demo-") ||
+    poolName.includes("UI TEST / MERIDIAN") ||
+    poolAddress.startsWith("DEMO") ||
+    poolAddress.startsWith("SYNTHETIC-") ||
+    poolName.startsWith("SYNTHETIC ") ||
+    poolName.startsWith("SYNTHETIC-")
+  );
 }
 
 async function readSignalRecords(storageDir: string) {
