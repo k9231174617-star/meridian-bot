@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { GetPoolsQueryParams, GetPoolParams, PoolSignalType, PoolIlRisk } from "@workspace/api-zod";
-import { fetchBirdeyeTrendingTokens, getBirdeyeApiKey } from "@workspace/birdeye";
+import { fetchGeckoTerminalTrendingPools } from "@workspace/geckoterminal";
 import { enrichPool } from "../lib/pools";
 import { loadDiscoveryCandidates, loadDiscoverySettings, mergeDiscoveredPools, parseDexList } from "../lib/discovery";
 import { resolveStorageDir } from "../lib/bot-status";
@@ -19,20 +19,17 @@ type PoolListPayload = {
 const poolsCache = new Map<string, { data: PoolListPayload; ts: number }>();
 const CACHE_TTL = 60_000;
 
-async function fetchBirdeyePools(limit: number, minTvl: number): Promise<PoolListPayload> {
-  const records = await fetchBirdeyeTrendingTokens({
+async function fetchGeckoPools(limit: number, minTvl: number): Promise<PoolListPayload> {
+  const records = await fetchGeckoTerminalTrendingPools({
+    network: "solana",
     limit: Math.max(limit * 2, limit),
-    sortBy: "liquidity",
-    sortType: "desc",
-    interval: "24h",
-    apiKey: getBirdeyeApiKey(),
   });
 
   const pools = records
-    .map((record) => birdeyeTokenToPool(record))
-    .filter((record) => Number(record.tvl ?? 0) >= minTvl)
+    .map((record: Record<string, unknown>) => geckoTerminalPoolToPool(record))
+    .filter((record: Record<string, unknown>) => Number(record.tvl ?? 0) >= minTvl)
     .slice(0, limit)
-    .map((record) => enrichPool(record));
+    .map((record: Record<string, unknown>) => enrichPool(record));
 
   return {
     pools,
@@ -73,25 +70,40 @@ async function fetchMeteoraPools(limit: number, minTvl: number): Promise<PoolLis
   return payload;
 }
 
-function birdeyeTokenToPool(record: Record<string, unknown>): Record<string, unknown> {
-  const address = String(record.address ?? record.token_address ?? record.mint ?? record.id ?? "");
-  const symbol = String(record.symbol ?? record.symbols ?? record.name ?? "").trim();
-  const tokenName = symbol ? `${symbol}-USDC` : address.slice(0, 6) || "TOKEN-USDC";
-  const liquidity = Number(record.liquidity ?? record.liquidity_usd ?? record.liquidityUsd ?? 0);
-  const volume24h = Number(record.volume_24h_usd ?? record.volume24hUsd ?? record.volume ?? 0);
-  const price = Number(record.price ?? record.usd_price ?? record.current_price ?? 0);
-  const fee24h = Number(record.fees_24h ?? record.fee24h ?? 0) || volume24h * 0.003;
+function geckoTerminalPoolToPool(record: Record<string, unknown>): Record<string, unknown> {
+  const address = String(record.address ?? record.id ?? "");
+  const symbol = String(record.name ?? "").trim();
+  const tokenName = normalizePairName(symbol) || `${address.slice(0, 6) || "TOKEN"}/SOL`;
+  const liquidity = Number(record.reserve_in_usd ?? record.liquidity ?? 0);
+  const volume24h = Number(
+    (record.volume_usd as Record<string, unknown> | undefined)?.h24 ?? record.volume_24h_usd ?? record.volume24hUsd ?? 0,
+  );
+  const price = Number(record.base_token_price_usd ?? record.price ?? record.current_price ?? 0);
+  const fee24h = volume24h * 0.003;
+  const baseTokenId = String(record.base_token_id ?? "").replace(/^.*_/, "");
+  const quoteTokenId = String(record.quote_token_id ?? "").replace(/^.*_/, "");
+  const [tokenXSymbol = "TOKEN", tokenYSymbol = "SOL"] = tokenName.split("/").map((part) => part.trim());
   return {
     address: address || tokenName,
     name: tokenName,
-    mint_x: address,
-    mint_y: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    mint_x: baseTokenId || address,
+    mint_y: quoteTokenId || "So11111111111111111111111111111111111111112",
     liquidity,
     trade_volume_24h: volume24h,
     fees_24h: fee24h,
     current_price: price,
     bin_step: Number(record.bin_step ?? record.binStep ?? 10),
+    tokenX: tokenXSymbol || "TOKEN",
+    tokenY: tokenYSymbol || "SOL",
   };
+}
+
+function normalizePairName(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.includes("/")) return trimmed.replace(/\s*\/\s*/g, "/");
+  if (trimmed.includes("-")) return trimmed.replace(/\s*-\s*/g, "/");
+  return trimmed;
 }
 
 function snapshotToApiPool(pool: any): PoolRecord {
@@ -158,8 +170,8 @@ router.get("/", async (req, res) => {
     const storageDir = resolveStorageDir();
     const discoverySettings = await loadDiscoverySettings(storageDir, parseDexList(process.env.BOT_ENABLED_DEXES));
     const candidates = await loadDiscoveryCandidates(storageDir, 100);
-    let data = await fetchBirdeyePools(query.limit, query.minTvl).catch(async (birdeyeError) => {
-      req.log.warn({ err: birdeyeError }, "Birdeye pool feed unavailable, trying Meteora");
+    let data = await fetchGeckoPools(query.limit, query.minTvl).catch(async (geckoError) => {
+      req.log.warn({ err: geckoError }, "GeckoTerminal pool feed unavailable, trying Meteora");
       return null;
     });
 

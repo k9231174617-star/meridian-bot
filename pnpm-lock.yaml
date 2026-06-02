@@ -92,6 +92,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/geckoterminal':
+        specifier: workspace:*
+        version: link:../../lib/geckoterminal
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -364,6 +367,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/geckoterminal':
+        specifier: workspace:*
+        version: link:../../lib/geckoterminal
       bn.js:
         specifier: ^5.2.2
         version: 5.2.3
@@ -435,6 +441,8 @@ importers:
       drizzle-kit:
         specifier: ^0.31.9
         version: 0.31.9
+
+  lib/geckoterminal: {}
 
   scripts:
     devDependencies:

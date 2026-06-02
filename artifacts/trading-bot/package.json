@@ -20,6 +20,7 @@
     "@solana/web3.js": "^1.98.4",
     "bn.js": "^5.2.2",
     "@workspace/birdeye": "workspace:*",
+    "@workspace/geckoterminal": "workspace:*",
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "zod": "catalog:"

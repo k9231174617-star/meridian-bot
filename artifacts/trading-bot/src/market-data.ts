@@ -1,13 +1,13 @@
 import type { MarketSnapshot, PoolSnapshot, PriceSnapshot } from "./domain.js";
 import {
   DEFAULT_BIRDEYE_PRICE_SYMBOLS,
-  fetchBirdeyeTrendingTokens,
   fetchBirdeyeTokenMarketData,
   fetchBirdeyeTokenPrice,
   getBirdeyeApiKey,
   TOKEN_MINTS as BIRDEYE_TOKEN_MINTS,
   type BirdeyeRecord,
 } from "@workspace/birdeye";
+import { fetchGeckoTerminalTrendingPools, type GeckoTerminalRecord } from "@workspace/geckoterminal";
 
 export type MarketDataProvider = {
   fetchSnapshot(): Promise<MarketSnapshot>;
@@ -42,20 +42,17 @@ export class DirectMarketDataProvider implements MarketDataProvider {
 
   private async fetchPools(): Promise<PoolSnapshot[]> {
     try {
-      const records = await fetchBirdeyeTrendingTokens({
+      const records = await fetchGeckoTerminalTrendingPools({
+        network: "solana",
         limit: Math.max(this.limit * 2, this.limit),
-        sortBy: "liquidity",
-        sortType: "desc",
-        interval: "24h",
-        apiKey: this.birdeyeApiKey ?? getBirdeyeApiKey(),
       });
-      const birdeyePools = records
-        .map((record) => normalizeBirdeyePool(record))
+      const geckoPools = records
+        .map((record) => normalizeGeckoTerminalPool(record))
         .filter((pool) => pool.tvlUsd >= this.minTvl)
         .slice(0, this.limit);
 
-      if (birdeyePools.length > 0) {
-        return birdeyePools;
+      if (geckoPools.length > 0) {
+        return geckoPools;
       }
     } catch {
       // Fall through to Meteora fallback.
@@ -263,37 +260,34 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   };
 }
 
-function normalizeBirdeyePool(record: BirdeyeRecord): PoolSnapshot {
+function normalizeGeckoTerminalPool(record: GeckoTerminalRecord): PoolSnapshot {
   const address = toString(record.address ?? record.token_address ?? record.mint ?? record.id);
-  const symbol = toString(record.symbol ?? record.symbols ?? record.base_symbol ?? record.name ?? record.token_name);
-  const tokenX = symbol ? symbol.split("/")[0].trim().toUpperCase() : prefix(record.address);
-  const tokenY = "USDC";
+  const symbol = toString(record.name ?? record.symbol ?? record.symbols ?? record.base_symbol ?? record.token_name);
+  const pair = normalizePairName(symbol || `${prefix(record.address)}/SOL`);
+  const [tokenX, tokenY] = splitPairName(pair);
   const tvlUsd = toNumber(
-    record.liquidity ??
-      record.liquidity_usd ??
-      record.liquidityUsd ??
-      record.liquidity_usdt ??
-      record.total_liquidity,
+    record.reserve_in_usd ?? record.liquidity ?? record.liquidity_usd ?? record.liquidityUsd ?? record.total_liquidity,
   );
   const volume24hUsd = toNumber(
-    record.volume_24h_usd ??
+    (record.volume_usd as Record<string, unknown> | undefined)?.h24 ??
+      record.volume_24h_usd ??
       record.volume24hUsd ??
       record.volume ??
       record.volume_24h ??
       record.trade_volume_24h,
   );
-  const price = toNumber(record.price ?? record.usd_price ?? record.current_price);
+  const price = toNumber(record.base_token_price_usd ?? record.price ?? record.usd_price ?? record.current_price);
   const fdvUsd = toOptionalNumber(record.fdv_usd ?? record.fdv ?? record.market_cap ?? record.marketCap) ?? estimateFdv(tvlUsd, volume24hUsd);
-  const fee24hUsd = toNumber(record.fees_24h ?? record.fee24h ?? record.fee_24h) || volume24hUsd * 0.003;
+  const fee24hUsd = volume24hUsd * 0.003;
   const feeRatePct = tvlUsd > 0 ? (fee24hUsd / tvlUsd) * 100 : 0;
-  const jupScore = computeJupScore(tvlUsd, volume24hUsd, feeRatePct, 10);
+  const jupScore = computeJupScore(tvlUsd, volume24hUsd, feeRatePct, toInteger(record.bin_step ?? record.binStep, 10));
   const smartMoneyScore = computeSmartMoneyScore(tvlUsd, volume24hUsd, feeRatePct);
   const signalScore = Math.round(jupScore * 0.5 + smartMoneyScore * 0.3 + feeRatePct * 2);
   const holderGini = toOptionalNumber(record.holder_gini ?? record.holderGini) ?? estimateHolderGini(
     toOptionalNumber(record.top_holder_share_pct ?? record.topHolderSharePct),
     toOptionalNumber(record.top_ten_holder_share_pct ?? record.topTenHolderSharePct),
   );
-  const devWalletAgeDays = toOptionalNumber(record.dev_wallet_age_days ?? record.devWalletAgeDays) ?? estimateDevWalletAgeDays(toString(record.created_at ?? record.createdAt));
+  const devWalletAgeDays = toOptionalNumber(record.dev_wallet_age_days ?? record.devWalletAgeDays) ?? estimateDevWalletAgeDays(toString(record.pool_created_at ?? record.created_at ?? record.createdAt));
   const previousRugsByDev = toInteger(record.previous_rugs_by_dev ?? record.previousRugsByDev, 0);
   const contractRiskScore = toOptionalNumber(record.contract_risk_score ?? record.contractRiskScore) ?? estimateContractRiskScore({
     mintAuthorityRevoked: toOptionalBoolean(record.mint_authority_revoked ?? record.mintAuthorityRevoked),
@@ -334,14 +328,14 @@ function normalizeBirdeyePool(record: BirdeyeRecord): PoolSnapshot {
 
   return {
     address: address || `${tokenX}-${tokenY}`,
-    name: symbol ? `${symbol}-${tokenY}` : `${tokenX}-${tokenY}`,
+    name: symbol ? pair : `${tokenX}-${tokenY}`,
     tokenX,
     tokenY,
-    tokenXMint: address || undefined,
-    tokenYMint: BIRDEYE_TOKEN_MINTS.USDC,
+    tokenXMint: toString(record.base_token_id ?? record.baseTokenId ?? record.tokenXMint) || address || undefined,
+    tokenYMint: toString(record.quote_token_id ?? record.quoteTokenId ?? record.tokenYMint) || BIRDEYE_TOKEN_MINTS.SOL,
     tokenXDecimals: toInteger(record.decimals ?? record.token_decimals ?? record.tokenDecimals, fallbackDecimals(tokenX)),
-    tokenYDecimals: 6,
-    createdAt: toTimestamp(record.created_at ?? record.createdAt ?? record.updated_at ?? record.updatedAt ?? record.recent_listing_time),
+    tokenYDecimals: fallbackDecimals(tokenY),
+    createdAt: toTimestamp(record.pool_created_at ?? record.created_at ?? record.createdAt ?? record.updated_at ?? record.updatedAt ?? record.recent_listing_time),
     mintAuthorityRevoked: toOptionalBoolean(record.mint_authority_revoked ?? record.mintAuthorityRevoked),
     freezeAuthorityRevoked: toOptionalBoolean(record.freeze_authority_revoked ?? record.freezeAuthorityRevoked),
     liquidityLocked: toOptionalBoolean(record.liquidity_locked ?? record.liquidityLocked),
@@ -384,7 +378,7 @@ function normalizeBirdeyePool(record: BirdeyeRecord): PoolSnapshot {
     currentPrice: price,
     activeBinId: toInteger(record.active_id ?? record.activeBinId, 0),
     degenScore: round2(degenScore),
-    discoverySource: "fallback",
+    discoverySource: "geckoterminal-api",
   };
 }
 
@@ -432,8 +426,16 @@ function computeSignalSeed(score: number) {
 }
 
 function splitPairName(name: string): [string, string] {
-  const [tokenX = "TOKEN", tokenY = "USDC"] = name.split("-");
-  return [tokenX || "TOKEN", tokenY || "USDC"];
+  const [tokenX = "TOKEN", tokenY = "SOL"] = name.split("-");
+  return [tokenX || "TOKEN", tokenY || "SOL"];
+}
+
+function normalizePairName(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "TOKEN/SOL";
+  if (trimmed.includes("/")) return trimmed.replace(/\s*\/\s*/g, "/");
+  if (trimmed.includes("-")) return trimmed.replace(/\s*-\s*/g, "/");
+  return `${trimmed}/SOL`;
 }
 
 function prefix(value: unknown) {

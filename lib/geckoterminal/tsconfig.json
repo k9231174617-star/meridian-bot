@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": [],
+    "lib": ["es2022", "dom"],
+    "moduleResolution": "node16",
+    "module": "Node16"
+  },
+  "include": ["src"]
+}
