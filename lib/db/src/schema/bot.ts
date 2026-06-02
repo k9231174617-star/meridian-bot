@@ -1,4 +1,4 @@
-import { boolean, jsonb, integer, pgTable, serial, text, timestamp, doublePrecision, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, integer, pgTable, serial, text, timestamp, doublePrecision, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const botRunsTable = pgTable("bot_runs", {
   id: serial("id").primaryKey(),
@@ -16,6 +16,24 @@ export const marketSnapshotsTable = pgTable("market_snapshots", {
   payload: jsonb("payload").notNull(),
   observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const botEventHistoryTable = pgTable("bot_event_history", {
+  id: serial("id").primaryKey(),
+  eventId: text("event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  strategy: text("strategy"),
+  action: text("action"),
+  source: text("source"),
+  poolAddress: text("pool_address"),
+  tokenMint: text("token_mint"),
+  walletAddress: text("wallet_address"),
+  confidence: doublePrecision("confidence"),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  eventIdIdx: uniqueIndex("bot_event_history_event_id_idx").on(table.eventId),
+  eventTypeIdx: index("bot_event_history_event_type_idx").on(table.eventType, table.createdAt),
+}));
 
 export const botSignalsTable = pgTable("bot_signals", {
   id: serial("id").primaryKey(),

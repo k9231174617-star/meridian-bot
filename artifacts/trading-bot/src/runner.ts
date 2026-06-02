@@ -22,7 +22,7 @@ import {
   loadDiscoverySettings,
   mergeDiscoveredPools,
 } from "./dex-discovery.js";
-import type { BotMode, MarketSnapshot, RetryJob, TradeIntent } from "./domain.js";
+import type { BotMode, MarketSnapshot, OrchestrationEventHistory, RetryJob, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
   maxCycles?: number;
@@ -76,6 +76,21 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       endpoint: config.yellowstoneEndpoint,
       token: config.yellowstoneToken,
       enabled: Boolean(config.yellowstoneEndpoint),
+      onStatus: (status) => {
+        metrics.log("geyser_status", { status });
+        if (status === "degraded" || status === "error") {
+          void emitAlert({
+            severity: "warning",
+            title: "Yellowstone stream degraded",
+            message: `Yellowstone/Geyser status changed to ${status}. The bot is falling back to other discovery paths.`,
+            context: { status, endpoint: config.yellowstoneEndpoint },
+            createdAt: new Date().toISOString(),
+          });
+        }
+      },
+      onError: (error) => {
+        metrics.log("geyser_error", { error: serializeError(error) });
+      },
     },
   });
   const discoveryRpc = config.rpcUrl ? new Connection(config.rpcUrl, config.rpcWsUrl ? { commitment: "confirmed", wsEndpoint: config.rpcWsUrl } : "confirmed") : null;
@@ -99,6 +114,11 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   }
 
   const stopOrchestration = await orchestrator.start({
+    onAnyEvent: async (event) => {
+      if (!storage) return;
+      const record = buildEventHistory(event);
+      await storage.saveEventHistory(record);
+    },
     onPoolNew: async (event) => {
       if (event.data.source === "snapshot") {
         metrics.log("snapshot_pool_candidate", {
@@ -189,6 +209,16 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     },
     onPhantomAttacked: async (event) => {
       metrics.log("phantom_attack_event", {
+        type: event.type,
+        ts: event.ts,
+        poolAddress: event.poolAddress,
+        tokenMint: event.tokenMint,
+        walletAddress: event.walletAddress,
+        data: event.data,
+      });
+    },
+    onStrategyTriggered: async (event) => {
+      metrics.log("strategy_triggered", {
         type: event.type,
         ts: event.ts,
         poolAddress: event.poolAddress,
@@ -551,6 +581,36 @@ function buildPaperDebugSignal(snapshot: MarketSnapshot, cycle: number, provider
   };
 }
 
+function buildEventHistory(event: import("./streams/event-bus.js").BotEvent): OrchestrationEventHistory {
+  const source = typeof event.data.source === "string" ? event.data.source : undefined;
+  const strategy = typeof event.data.strategy === "string" ? (event.data.strategy as OrchestrationEventHistory["strategy"]) : undefined;
+  const action = typeof event.data.action === "string" ? (event.data.action as OrchestrationEventHistory["action"]) : undefined;
+  const confidence = typeof event.data.confidence === "number" && Number.isFinite(event.data.confidence) ? event.data.confidence : undefined;
+  return {
+    id: `evt_${createHash("sha256").update(stableStringify({
+      type: event.type,
+      ts: event.ts,
+      poolAddress: event.poolAddress,
+      tokenMint: event.tokenMint,
+      walletAddress: event.walletAddress,
+      data: event.data,
+    })).digest("hex").slice(0, 24)}`,
+    eventType: event.type,
+    strategy,
+    action,
+    source,
+    poolAddress: event.poolAddress,
+    tokenMint: event.tokenMint,
+    walletAddress: event.walletAddress,
+    confidence,
+    payload: {
+      ...event,
+      data: event.data,
+    } as Record<string, unknown>,
+    createdAt: new Date(event.ts).toISOString(),
+  };
+}
+
 function buildExecutionPlan(
   intent: TradeIntent,
   executionHints?: {
@@ -711,4 +771,11 @@ function serializeError(error: unknown) {
 
 function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(",")}}`;
 }

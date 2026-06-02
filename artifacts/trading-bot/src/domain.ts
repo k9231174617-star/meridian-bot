@@ -1,5 +1,31 @@
 export type BotMode = "paper" | "dry-run" | "live";
 export type SupportedDex = "meteora" | "raydium" | "orca";
+export type StrategyType =
+  | "RUG_PULL_SHIELD"
+  | "SNIPER_SHADOW"
+  | "BONDING_CURVE_ARB"
+  | "SOCIAL_VELOCITY"
+  | "MEV_RESIST"
+  | "INSURANCE_HEDGE"
+  | "COPY_PASTE_LP"
+  | "FLASH_LP"
+  | "WHALE_ADJUST"
+  | "TICK_RANGE_PROPHET"
+  | "LIQUIDITY_VACUUM"
+  | "WALLET_FINGERPRINT"
+  | "FEE_COMPOUNDING_FLYWHEEL"
+  | "NARRATIVE_GRAPH"
+  | "DEAD_POOL_RESURRECTOR"
+  | "EXECUTION_AUCTION"
+  | "PHANTOM_LIQUIDITY";
+export type StrategyAction =
+  | TradeAction
+  | "WATCH"
+  | "BLACKLIST"
+  | "REDUCE_EXPOSURE"
+  | "REPRICE"
+  | "PAUSE"
+  | "OPEN_POSITION";
 export type SignalType =
   | "LIQUIDITY_SURGE"
   | "PRICE_DISLOCATION"
@@ -152,6 +178,34 @@ export type TradeIntent = {
   priorityFeeMicroLamports: number;
   route: "JUPITER" | "DIRECT_POOL" | "PAPER" | "AUCTION";
   executionHints?: Signal["executionHints"];
+  createdAt: string;
+};
+
+export type StrategyDirective = {
+  id: string;
+  sourceEventType: string;
+  strategy: StrategyType;
+  action: StrategyAction;
+  poolAddress?: string;
+  tokenMint?: string;
+  walletAddress?: string;
+  confidence: number;
+  reasons: string[];
+  executionHints?: Signal["executionHints"];
+  createdAt: string;
+};
+
+export type OrchestrationEventHistory = {
+  id: string;
+  eventType: string;
+  strategy?: StrategyType;
+  action?: StrategyAction;
+  source?: string;
+  poolAddress?: string;
+  tokenMint?: string;
+  walletAddress?: string;
+  confidence?: number;
+  payload: Record<string, unknown>;
   createdAt: string;
 };
 

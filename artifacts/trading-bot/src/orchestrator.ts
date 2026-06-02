@@ -1,4 +1,4 @@
-import type { MarketSnapshot, PoolSnapshot } from "./domain.js";
+import type { MarketSnapshot, PoolSnapshot, StrategyAction, StrategyDirective, StrategyType } from "./domain.js";
 import { eventBus, type BotEvent } from "./streams/event-bus.js";
 import { GeyserClient, type GeyserClientOptions } from "./streams/geyser-client.js";
 import { WssPoolWatcher, type WssPoolWatcherOptions } from "./streams/wss-pool-watcher.js";
@@ -6,6 +6,7 @@ import { WssPoolWatcher, type WssPoolWatcherOptions } from "./streams/wss-pool-w
 export type OrchestratorHook = (event: BotEvent) => void | Promise<void>;
 
 export type OrchestratorHooks = {
+  onAnyEvent?: OrchestratorHook;
   onPoolNew?: OrchestratorHook;
   onPoolTvlDrop?: OrchestratorHook;
   onPoolVolumeSpike?: OrchestratorHook;
@@ -20,6 +21,7 @@ export type OrchestratorHooks = {
   onFeeAccumulated?: OrchestratorHook;
   onSocialVelocitySpike?: OrchestratorHook;
   onPhantomAttacked?: OrchestratorHook;
+  onStrategyTriggered?: OrchestratorHook;
 };
 
 export type OrchestratorOptions = {
@@ -49,6 +51,7 @@ export class BotOrchestrator {
   private readonly eventQueue: QueuedEvent[] = [];
   private readonly recentEvents = new Map<string, number>();
   private readonly busListeners: Array<() => void> = [];
+  private hooks: OrchestratorHooks = {};
   private stats: OrchestrationStats = {
     eventsEmitted: 0,
     eventsByType: {},
@@ -78,6 +81,7 @@ export class BotOrchestrator {
 
     this.started = true;
     this.stats.startedAt = new Date().toISOString();
+    this.hooks = hooks;
     this.bindHooks(hooks);
     this.bindEventBus();
 
@@ -102,6 +106,7 @@ export class BotOrchestrator {
     this.eventQueue.length = 0;
     this.hookHandlers.clear();
     this.recentEvents.clear();
+    this.hooks = {};
     while (this.busListeners.length > 0) {
       const remove = this.busListeners.pop();
       try {
@@ -330,6 +335,7 @@ export class BotOrchestrator {
       ["onFeeAccumulated", "fee:accumulated"],
       ["onSocialVelocitySpike", "social:velocity_spike"],
       ["onPhantomAttacked", "phantom:attacked"],
+      ["onStrategyTriggered", "strategy:triggered"],
     ];
 
     for (const [hookName, eventType] of mappings) {
@@ -413,13 +419,43 @@ export class BotOrchestrator {
         if (publish) {
           eventBus.emit(event.type, event);
         }
-        const handlers = this.hookHandlers.get(event.type);
-        if (!handlers || handlers.length === 0) continue;
-        for (const handler of handlers) {
+        if (this.hooks.onAnyEvent) {
           try {
-            await Promise.resolve(handler(event));
+            await Promise.resolve(this.hooks.onAnyEvent(event));
           } catch (error) {
-            console.warn(`[orchestrator] ${event.type} listener failed`, error);
+            console.warn(`[orchestrator] onAnyEvent listener failed`, error);
+          }
+        }
+        const directives = this.routeStrategies(event);
+        for (const directive of directives) {
+          this.enqueue(
+            {
+              type: "strategy:triggered",
+              ts: Date.now(),
+              poolAddress: directive.poolAddress,
+              tokenMint: directive.tokenMint,
+              walletAddress: directive.walletAddress,
+              data: {
+                source: "orchestrator",
+                sourceEventType: directive.sourceEventType,
+                strategy: directive.strategy,
+                action: directive.action,
+                confidence: directive.confidence,
+                reasons: directive.reasons,
+                executionHints: directive.executionHints ?? null,
+              },
+            },
+            true,
+          );
+        }
+        const handlers = this.hookHandlers.get(event.type);
+        if (handlers && handlers.length > 0) {
+          for (const handler of handlers) {
+            try {
+              await Promise.resolve(handler(event));
+            } catch (error) {
+              console.warn(`[orchestrator] ${event.type} listener failed`, error);
+            }
           }
         }
       }
@@ -441,6 +477,62 @@ export class BotOrchestrator {
     const walletAddress = event.walletAddress ?? "";
     return [event.type, poolAddress, tokenMint, walletAddress, stableStringify(event.data)].join("|");
   }
+
+  private routeStrategies(event: BotEvent): StrategyDirective[] {
+    if (event.type === "strategy:triggered") return [];
+
+    const base = {
+      poolAddress: event.poolAddress,
+      tokenMint: event.tokenMint,
+      walletAddress: event.walletAddress,
+      createdAt: new Date(event.ts).toISOString(),
+      sourceEventType: event.type,
+    } satisfies Omit<StrategyDirective, "id" | "strategy" | "action" | "confidence" | "reasons">;
+
+    switch (event.type) {
+      case "pool:new": {
+        const directives: StrategyDirective[] = [];
+        const keywords = asStringArray(event.data.keywords);
+        const bondingCurveProgress = asNumber(event.data.bondingCurveProgressPct);
+        if (keywords.some((keyword) => /rug|mintauthority|freezeauthority/i.test(keyword))) {
+          directives.push(createDirective(base, "RUG_PULL_SHIELD", "WATCH", 0.98, ["New pool keywords match rug-risk markers"]));
+        } else {
+          directives.push(createDirective(base, "TICK_RANGE_PROPHET", "WATCH", 0.76, ["New pool discovered, start range estimation"]));
+        }
+        if ((bondingCurveProgress ?? 0) >= 90) {
+          directives.push(createDirective(base, "BONDING_CURVE_ARB", "REBALANCE", 0.92, ["Bonding curve near completion"]));
+        }
+        return directives;
+      }
+      case "pool:tvl_drop":
+        return [createDirective(base, "RUG_PULL_SHIELD", "REMOVE_LIQUIDITY", 0.99, ["TVL dropped sharply"])];
+      case "pool:volume_spike":
+        return [createDirective(base, "LIQUIDITY_VACUUM", "ADD_LIQUIDITY", 0.88, ["Volume spike with relative liquidity vacuum"])];
+      case "wallet:dev_swap":
+        return [createDirective(base, "WALLET_FINGERPRINT", "BLACKLIST", 0.9, ["Creator wallet changed or rotated"])];
+      case "wallet:whale_move":
+        return [createDirective(base, "WHALE_ADJUST", "REDUCE_EXPOSURE", 0.85, ["Whale pressure increased"])];
+      case "token:mint_active":
+        return [createDirective(base, "FLASH_LP", "ADD_LIQUIDITY", 0.84, ["Mint activity detected"])];
+      case "token:rug_signal":
+        return [createDirective(base, "RUG_PULL_SHIELD", "REMOVE_LIQUIDITY", 0.99, ["Rug signal detected"])];
+      case "token:migrate":
+        return [createDirective(base, "BONDING_CURVE_ARB", "REBALANCE", 0.9, ["Migration or bonding curve event detected"])];
+      case "sniper:detected":
+        return [createDirective(base, "SNIPER_SHADOW", "HEDGE", 0.87, ["Sniper activity detected"])];
+      case "fee:accumulated":
+        return [createDirective(base, "FEE_COMPOUNDING_FLYWHEEL", "REPRICE", 0.8, ["Fee accumulation crossed threshold"])];
+      case "social:velocity_spike": {
+        const delta = asNumber(event.data.socialVelocityDelta) ?? 0;
+        const action: StrategyAction = delta >= 0 ? "ADD_LIQUIDITY" : "REMOVE_LIQUIDITY";
+        return [createDirective(base, "SOCIAL_VELOCITY", action, Math.min(0.95, 0.82 + Math.abs(delta) / 100), ["Social velocity changed materially"])];
+      }
+      case "phantom:attacked":
+        return [createDirective(base, "PHANTOM_LIQUIDITY", "WAIT", 0.91, ["Phantom liquidity tripwire attacked"])];
+      default:
+        return [];
+    }
+  }
 }
 
 function isStreamEvent(event: BotEvent) {
@@ -455,6 +547,39 @@ function computeOverlap(left: string[], right: string[]) {
 
 function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function createDirective(
+  base: Omit<StrategyDirective, "id" | "strategy" | "action" | "confidence" | "reasons">,
+  strategy: StrategyType,
+  action: StrategyAction,
+  confidence: number,
+  reasons: string[],
+): StrategyDirective {
+  return {
+    id: stableId([base.sourceEventType, base.poolAddress, base.tokenMint, base.walletAddress, strategy, action, reasons.join("|")]),
+    ...base,
+    strategy,
+    action,
+    confidence: clamp01(confidence),
+    reasons,
+  };
+}
+
+function stableId(parts: Array<string | undefined>) {
+  return parts.filter(Boolean).join(":").replace(/[^a-zA-Z0-9:_-]+/g, "_").slice(0, 96);
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 function stableStringify(value: unknown): string {

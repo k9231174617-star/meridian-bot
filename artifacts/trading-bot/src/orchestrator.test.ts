@@ -107,3 +107,24 @@ test("orchestrator consumes stream events from the event bus", async () => {
 
   assert.ok(events.includes("pool:new"));
 });
+
+test("orchestrator routes pool events into strategy directives", async () => {
+  const orchestrator = new BotOrchestrator({
+    enabled: true,
+    enableWssPoolWatcher: false,
+    enableGeyser: false,
+  });
+
+  const strategyEvents: string[] = [];
+  const stop = await orchestrator.start({
+    onStrategyTriggered: (event) => {
+      strategyEvents.push(String(event.data.strategy));
+    },
+  });
+
+  orchestrator.ingestSnapshot(buildSnapshot(), undefined, []);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await stop();
+
+  assert.ok(strategyEvents.includes("TICK_RANGE_PROPHET"));
+});

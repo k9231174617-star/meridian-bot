@@ -3,7 +3,7 @@ import path from "node:path";
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Alert } from "./alerts.js";
-import type { MarketSnapshot, Signal, TradeIntent, ExecutionResult, RiskDecision, StoredPosition, RetryJob } from "./domain.js";
+import type { MarketSnapshot, Signal, TradeIntent, ExecutionResult, RiskDecision, StoredPosition, RetryJob, OrchestrationEventHistory } from "./domain.js";
 import type { BotConfig } from "./config.js";
 
 export type BotStorage = {
@@ -20,6 +20,7 @@ export type BotStorage = {
   saveExecution(execution: ExecutionResult): Promise<void>;
   loadExecutionByIntentId(intentId: string): Promise<ExecutionResult | null>;
   saveAlert(alert: Alert): Promise<void>;
+  saveEventHistory(event: OrchestrationEventHistory): Promise<void>;
   savePosition(position: StoredPosition): Promise<void>;
   loadPosition(poolAddress: string): Promise<StoredPosition | null>;
   saveRetryJob(job: RetryJob): Promise<void>;
@@ -37,6 +38,7 @@ type JsonLineRecord =
   | { kind: "intent"; intent: TradeIntent }
   | { kind: "execution"; execution: ExecutionResult }
   | { kind: "alert"; alert: Alert }
+  | { kind: "event_history"; event: OrchestrationEventHistory }
   | { kind: "position"; position: StoredPosition }
   | { kind: "retry_job"; job: RetryJob; reason?: string };
 
@@ -183,6 +185,21 @@ export async function createStorage(databaseUrl?: string, options?: { storageDir
           message: alert.title,
           payload: alert,
         });
+      },
+      async saveEventHistory(event) {
+        await db.insert(schema.botEventHistoryTable).values({
+          eventId: event.id,
+          eventType: event.eventType,
+          strategy: event.strategy,
+          action: event.action,
+          source: event.source,
+          poolAddress: event.poolAddress,
+          tokenMint: event.tokenMint,
+          walletAddress: event.walletAddress,
+          confidence: event.confidence,
+          payload: event,
+          createdAt: new Date(event.createdAt),
+        }).onConflictDoNothing({ target: schema.botEventHistoryTable.eventId });
       },
       async savePosition(position) {
         await db
@@ -391,6 +408,12 @@ class FileBotStorage implements BotStorage {
   async saveAlert(alert: Alert): Promise<void> {
     return this.enqueue(async () => {
       await this.append("alerts.jsonl", { kind: "alert", alert } satisfies JsonLineRecord);
+    });
+  }
+
+  async saveEventHistory(event: OrchestrationEventHistory): Promise<void> {
+    return this.enqueue(async () => {
+      await this.append("event-history.jsonl", { kind: "event_history", event } satisfies JsonLineRecord);
     });
   }
 

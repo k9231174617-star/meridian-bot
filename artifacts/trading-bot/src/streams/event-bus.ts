@@ -14,7 +14,8 @@ export type BotEventType =
   | "position:close"
   | "fee:accumulated"
   | "social:velocity_spike"
-  | "phantom:attacked";
+  | "phantom:attacked"
+  | "strategy:triggered";
 
 export interface BotEvent {
   type: BotEventType;
