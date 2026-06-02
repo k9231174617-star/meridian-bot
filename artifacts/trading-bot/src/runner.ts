@@ -25,7 +25,7 @@ import {
   loadDiscoverySettings,
   mergeDiscoveredPools,
 } from "./dex-discovery.js";
-import type { BotMode, MarketSnapshot, OrchestrationEventHistory, RetryJob, TradeIntent } from "./domain.js";
+import type { BotMode, MarketSnapshot, OrchestrationEventHistory, RetryJob, Signal, StoredPosition, TradeIntent } from "./domain.js";
 
 export type RunBotOverrides = {
   maxCycles?: number;
@@ -495,6 +495,21 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
             },
           });
           if (storage) {
+            await storage.savePosition(
+              buildStoredPosition({
+                plannedSignal,
+                slice,
+                pool,
+                learningPlan,
+                execution: undefined,
+                isActive: true,
+                mode: config.mode,
+                createdAt: new Date().toISOString(),
+                openedAt: new Date().toISOString(),
+              }),
+            );
+          }
+          if (storage) {
             await storage.saveEventHistory(buildEventHistory({
               type: "position:open",
               ts: Date.now(),
@@ -541,6 +556,23 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
                 plan: learningPlan,
               },
             });
+          if (storage) {
+            const previousPosition = await storage.loadPosition(plannedSignal.poolAddress);
+            await storage.savePosition(
+              buildStoredPosition({
+                plannedSignal,
+                slice,
+                pool,
+                learningPlan,
+                execution: result,
+                isActive: false,
+                mode: config.mode,
+                createdAt: new Date().toISOString(),
+                openedAt: previousPosition?.openedAt ?? previousPosition?.createdAt,
+                closedAt: new Date().toISOString(),
+              }),
+            );
+          }
             if (storage) {
               await storage.saveEventHistory(buildEventHistory({
                 type: "position:close",
@@ -697,6 +729,65 @@ function buildEventHistory(event: import("./streams/event-bus.js").BotEvent): Or
       data: event.data,
     } as Record<string, unknown>,
     createdAt: new Date(event.ts).toISOString(),
+  };
+}
+
+function buildStoredPosition(params: {
+  plannedSignal: Signal;
+  slice: TradeIntent;
+  pool: MarketSnapshot["pools"][number] | undefined;
+  learningPlan: ReturnType<SelfLearningLoop["selectPlan"]>;
+  execution?: { filledUsd: number; feesUsd: number; slippageUsd: number; status: string } | undefined;
+  isActive: boolean;
+  mode: BotMode;
+  createdAt: string;
+  openedAt?: string;
+  closedAt?: string;
+}): StoredPosition {
+  const { plannedSignal, slice, pool, learningPlan, execution, isActive, mode, createdAt, openedAt, closedAt } = params;
+  const tickRange = plannedSignal.executionHints?.tickRange;
+  const activeBinId = pool?.activeBinId ?? tickRange?.centerBinId ?? 0;
+  const lowerBinId = tickRange?.lowerBinId ?? Math.max(0, activeBinId - 3);
+  const upperBinId = tickRange?.upperBinId ?? activeBinId + 3;
+  const strategyType: StoredPosition["strategyType"] =
+    tickRange ? "Curve" : plannedSignal.action === "SWAP" || plannedSignal.action === "HEDGE" ? "Spot" : "BidAsk";
+  const liquidityUsd = round2(Math.max(0, slice.amountUsd));
+  const feesEarnedUsd = round2(Math.max(0, execution?.feesUsd ?? 0));
+  const pnlUsd = round2(Math.max(0, execution ? execution.filledUsd - execution.feesUsd - execution.slippageUsd : 0));
+  const pnlPct = liquidityUsd > 0 ? round2((pnlUsd / liquidityUsd) * 100) : 0;
+
+  return {
+    poolAddress: plannedSignal.poolAddress,
+    positionAddress: createHash("sha256").update(JSON.stringify({
+      signalId: plannedSignal.id,
+      intentId: slice.id,
+      poolAddress: plannedSignal.poolAddress,
+      mode,
+      strategy: learningPlan.strategy,
+    })).digest("hex").slice(0, 32),
+    minBinId: lowerBinId,
+    maxBinId: upperBinId,
+    strategyType,
+    isActive,
+    createdAt,
+    updatedAt: createdAt,
+    poolName: pool?.name ?? plannedSignal.poolName,
+    tokenX: pool?.tokenX ?? "TOKEN",
+    tokenY: pool?.tokenY ?? "USDC",
+    tokenXAmount: round2(liquidityUsd),
+    tokenYAmount: 0,
+    liquidityUsd,
+    feesEarnedUsd,
+    pnlUsd,
+    pnlPct,
+    activeBinId,
+    openedAt: openedAt ?? createdAt,
+    closedAt: isActive ? undefined : closedAt ?? createdAt,
+    signalId: plannedSignal.id,
+    intentId: slice.id,
+    mode,
+    source: mode === "paper" ? "paper" : "live",
+    status: isActive ? "open" : "closed",
   };
 }
 

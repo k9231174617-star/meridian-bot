@@ -172,6 +172,41 @@ type SignalFeed = {
   }>;
 };
 
+type BotPositionsFeed = {
+  updatedAt: string;
+  total: number;
+  active: number;
+  closed: number;
+  totalLiquidityUsd: number;
+  totalFeesEarned: number;
+  totalPnlUsd: number;
+  positions: Array<{
+    address: string;
+    poolAddress: string;
+    poolName: string;
+    tokenX: string;
+    tokenY: string;
+    lowerBinId: number;
+    upperBinId: number;
+    activeBinId: number;
+    inRange: boolean;
+    liquidityUsd: number;
+    tokenXAmount: number;
+    tokenYAmount: number;
+    feesEarned: number;
+    pnlUsd: number;
+    pnlPct: number;
+    openedAt: string;
+    updatedAt: string;
+    isActive?: boolean;
+    source?: "paper" | "live";
+    mode?: string;
+    status?: "open" | "closed";
+  }>;
+};
+
+type DashboardPosition = BotPositionsFeed["positions"][number];
+
 type UiPool = Pool & {
   dex?: SupportedDex;
   discoveryConfidence?: number;
@@ -651,6 +686,15 @@ async function fetchSignalFeed(): Promise<SignalFeed> {
   return (await response.json()) as SignalFeed;
 }
 
+async function fetchBotPositions(): Promise<BotPositionsFeed> {
+  const response = await fetch("/api/bot/positions", { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`Bot positions request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as BotPositionsFeed;
+}
+
 async function saveDiscoverySettings(enabledDexes: SupportedDex[]): Promise<DiscoveryStatus> {
   const response = await fetch("/api/bot/discovery", {
     method: "PUT",
@@ -912,6 +956,13 @@ function App() {
       },
     },
   );
+  const botPositionsQuery = useQuery({
+    queryKey: ["bot-positions"],
+    queryFn: fetchBotPositions,
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+    gcTime: 60_000,
+  });
 
   const priceSymbols = useMemo(() => {
     const symbols = new Set<string>(["SOL", "USDC", "JUP", "RAY", "BONK"]);
@@ -923,8 +974,12 @@ function App() {
       symbols.add(position.tokenX);
       symbols.add(position.tokenY);
     }
+    for (const position of botPositionsQuery.data?.positions ?? []) {
+      symbols.add(position.tokenX);
+      symbols.add(position.tokenY);
+    }
     return Array.from(symbols).filter(Boolean).slice(0, 12);
-  }, [pools, positionsQuery.data?.positions]);
+  }, [botPositionsQuery.data?.positions, pools, positionsQuery.data?.positions]);
 
   const pricesQuery = useGetPrices(
     { tokens: priceSymbols.join(",") },
@@ -999,6 +1054,7 @@ function App() {
         paperTradeStatusQuery.refetch(),
         signalFeedQuery.refetch(),
       ]);
+      await queryClient.invalidateQueries({ queryKey: ["bot-positions"] });
     },
     onError: (error) => {
       toastMessage(error instanceof Error ? error.message : String(error));
@@ -1013,6 +1069,7 @@ function App() {
         paperTradeStatusQuery.refetch(),
         signalFeedQuery.refetch(),
       ]);
+      await queryClient.invalidateQueries({ queryKey: ["bot-positions"] });
     },
     onError: (error) => {
       toastMessage(error instanceof Error ? error.message : String(error));
@@ -1043,7 +1100,9 @@ function App() {
   });
 
   const analytics = analyticsQuery.data;
-  const positions = positionsQuery.data?.positions ?? [];
+  const walletPositions = (positionsQuery.data?.positions ?? []) as DashboardPosition[];
+  const botPositions = (botPositionsQuery.data?.positions ?? []) as DashboardPosition[];
+  const positions = botPositions.length > 0 ? botPositions : walletPositions;
   const prices = pricesQuery.data?.prices ?? {};
   const discovery = discoveryQuery.data;
   const signalFeed = signalFeedQuery.data;
@@ -1061,18 +1120,23 @@ function App() {
     if (currentStatus === "completed" && previousStatus !== "completed") {
       void queryClient.invalidateQueries({ queryKey: ["signal-feed"] });
       void queryClient.invalidateQueries({ queryKey: ["bot-status"] });
+      void queryClient.invalidateQueries({ queryKey: ["bot-positions"] });
     }
     previousPaperTradeStatus.current = currentStatus;
   }, [paperTradeStatusQuery.data?.status, queryClient]);
-  const totalPnlUsd = analytics?.totalPnlUsd ?? positionsQuery.data?.totalPnlUsd ?? 0;
-  const totalFeesEarned = analytics?.totalFeesEarned ?? positionsQuery.data?.totalFeesEarned ?? 0;
-  const totalLiquidityUsd = positionsQuery.data?.totalLiquidityUsd ?? 0;
+  const walletTotalPnlUsd = analytics?.totalPnlUsd ?? positionsQuery.data?.totalPnlUsd ?? 0;
+  const walletTotalFeesEarned = analytics?.totalFeesEarned ?? positionsQuery.data?.totalFeesEarned ?? 0;
+  const walletTotalLiquidityUsd = positionsQuery.data?.totalLiquidityUsd ?? 0;
+  const botPositionSummary = botPositionsQuery.data;
+  const totalPnlUsd = botPositions.length > 0 ? botPositionSummary?.totalPnlUsd ?? 0 : walletTotalPnlUsd;
+  const totalFeesEarned = botPositions.length > 0 ? botPositionSummary?.totalFeesEarned ?? 0 : walletTotalFeesEarned;
+  const totalLiquidityUsd = botPositions.length > 0 ? botPositionSummary?.totalLiquidityUsd ?? 0 : walletTotalLiquidityUsd;
   const totalTrades = analytics?.totalTrades ?? positions.length;
   const winRate = analytics?.winRate ?? 0;
   const avgHoldHours = analytics?.avgHoldTime ?? 0;
   const pnlHistory = analytics?.pnlHistory ?? [];
   const trackedBalanceUsd = Math.max(0, totalLiquidityUsd + totalPnlUsd);
-  const activePoolsCount = positions.length;
+  const activePoolsCount = positions.filter((position) => position.isActive !== false).length || positions.length;
   const activeSignalsCount = visiblePools.filter((pool) => pool.signalType === PoolSignalType.ENTER).length;
   const discoveryCandidates = discovery?.candidates ?? [];
   const discoveryObservations = discovery?.observations ?? [];
@@ -1492,7 +1556,16 @@ function App() {
   const apiHealthy = healthQuery.data?.status === "ok";
   const latestAlert = botStatus?.recentAlerts[0];
   const poolsLoadError = poolsQuery.error instanceof Error ? poolsQuery.error.message : poolsQuery.error ? String(poolsQuery.error) : "";
-  const positionsLoadError = positionsQuery.error instanceof Error ? positionsQuery.error.message : positionsQuery.error ? String(positionsQuery.error) : "";
+  const positionsLoadError = botPositionsQuery.error instanceof Error
+    ? botPositionsQuery.error.message
+    : botPositionsQuery.error
+      ? String(botPositionsQuery.error)
+      : positionsQuery.error instanceof Error
+        ? positionsQuery.error.message
+        : positionsQuery.error
+          ? String(positionsQuery.error)
+          : "";
+  const positionsLoading = botPositionsQuery.isLoading || (walletConnected && positionsQuery.isLoading);
   const analyticsLoadError = analyticsQuery.error instanceof Error ? analyticsQuery.error.message : analyticsQuery.error ? String(analyticsQuery.error) : "";
   const pricesLoadError = pricesQuery.error instanceof Error ? pricesQuery.error.message : pricesQuery.error ? String(pricesQuery.error) : "";
 
@@ -2043,8 +2116,16 @@ function App() {
           </div>
         </div>
 
-        {sortedPositions.length > 0 ? (
-          sortedPositions.map((position) => (
+        {positionsLoading ? (
+          <div className="card text-sm text-[var(--text-dim)]">
+            Loading positions...
+          </div>
+        ) : sortedPositions.length > 0 ? (
+          sortedPositions.map((position) => {
+            const positionActive = position.isActive !== false;
+            const positionTone = positionActive ? "up" : "down";
+            const positionStatus = position.status?.toUpperCase() ?? (positionActive ? "OPEN" : "CLOSED");
+            return (
             <button key={position.address} type="button" className="pos-card dashboard-card-button" onClick={() => {
               setSelectedPoolAddress(position.poolAddress);
               switchPage("signals");
@@ -2052,8 +2133,16 @@ function App() {
             }}>
               <div className="pos-top">
                 <div className="pos-name">{position.poolName}</div>
-                <div className={`pos-pnl ${position.pnlUsd >= 0 ? "up" : "down"}`}>
+                <div className={`pos-pnl ${positionTone}`}>
                   {formatCurrency(position.pnlUsd, 2)} ({formatPercent(position.pnlPct, 1)})
+                </div>
+              </div>
+              <div className="signal-footer" style={{ marginTop: 4 }}>
+                <div className="signal-time">
+                  {position.mode ? position.mode.toUpperCase() : "PAPER"} · {position.source ? position.source.toUpperCase() : "BOT"} · {positionStatus}
+                </div>
+                <div className="signal-time" style={{ color: positionActive ? "var(--neon-green)" : "var(--neon-orange)" }}>
+                  {positionActive ? "ACTIVE" : "CLOSED"}
                 </div>
               </div>
               <div className="pos-details">
@@ -2087,9 +2176,12 @@ function App() {
                 </button>
               </div>
             </button>
-          ))
+            );
+          })
         ) : (
-          <div className="card text-sm text-[var(--text-dim)]">{t.connectHint}</div>
+          <div className="card text-sm text-[var(--text-dim)]">
+            {botPositions.length > 0 ? "Paper positions are syncing..." : t.connectHint}
+          </div>
         )}
       </div>
 

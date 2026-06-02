@@ -237,6 +237,23 @@ export type StoredPosition = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  poolName?: string;
+  tokenX?: string;
+  tokenY?: string;
+  tokenXAmount?: number;
+  tokenYAmount?: number;
+  liquidityUsd?: number;
+  feesEarnedUsd?: number;
+  pnlUsd?: number;
+  pnlPct?: number;
+  activeBinId?: number;
+  openedAt?: string;
+  closedAt?: string;
+  signalId?: string;
+  intentId?: string;
+  mode?: BotMode;
+  source?: "paper" | "live";
+  status?: "open" | "closed";
 };
 
 export type ExecutionResult = {
