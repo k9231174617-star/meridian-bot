@@ -237,7 +237,8 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
         });
       }
 
-      let cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined });
+      const recentSnapshots = storage ? await storage.loadRecentSnapshots(6) : [];
+      let cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined, history: recentSnapshots });
       if (config.mode === "paper" && config.paperDebugForceSignal && cycleSignals.length === 0) {
         const forcedSignal = buildPaperDebugSignal(snapshot, cycles, config.provider);
         if (forcedSignal) {

@@ -21,11 +21,13 @@ export async function runBacktest(config: BotConfig, snapshots: MarketSnapshot[]
 
   metrics.recordRunStart(snapshots[0]?.capturedAt ?? new Date().toISOString());
 
-  for (const snapshot of snapshots) {
+  for (let index = 0; index < snapshots.length; index += 1) {
+    const snapshot = snapshots[index]!;
     metrics.recordCycle();
     const enrichedSnapshot = await memeIntel.enrichSnapshot(snapshot);
     metrics.recordSnapshot(enrichedSnapshot.capturedAt);
-    const cycleSignals = signals.generate({ now: enrichedSnapshot, previous });
+    const history = snapshots.slice(0, index);
+    const cycleSignals = signals.generate({ now: enrichedSnapshot, previous, history });
     metrics.recordSignals(cycleSignals);
 
     for (const signal of cycleSignals) {

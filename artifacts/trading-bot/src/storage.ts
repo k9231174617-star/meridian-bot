@@ -11,6 +11,7 @@ export type BotStorage = {
   saveRunFinish(runId: number, status: "completed" | "failed", summary: Record<string, unknown>, endedAt: string): Promise<void>;
   saveSnapshot(snapshot: MarketSnapshot): Promise<void>;
   loadLastSnapshot(): Promise<MarketSnapshot | null>;
+  loadRecentSnapshots(limit: number): Promise<MarketSnapshot[]>;
   saveSignal(signal: Signal): Promise<void>;
   loadSignal(signalId: string): Promise<Signal | null>;
   saveRiskDecision(signalId: string, decision: RiskDecision): Promise<void>;
@@ -90,6 +91,14 @@ export async function createStorage(databaseUrl?: string, options?: { storageDir
         const row = rows[0];
         if (!row) return null;
         return row.payload as MarketSnapshot;
+      },
+      async loadRecentSnapshots(limit) {
+        const rows = await db
+          .select()
+          .from(schema.marketSnapshotsTable)
+          .orderBy(desc(schema.marketSnapshotsTable.observedAt))
+          .limit(Math.max(1, limit));
+        return rows.map((row) => row.payload as MarketSnapshot).reverse();
       },
       async saveSignal(signal) {
         await db.insert(schema.botSignalsTable).values({
@@ -308,6 +317,16 @@ class FileBotStorage implements BotStorage {
       const record = await this.readLastRecord("snapshots.jsonl");
       if (!record || record.kind !== "snapshot") return null;
       return record.snapshot;
+    });
+  }
+
+  async loadRecentSnapshots(limit: number): Promise<MarketSnapshot[]> {
+    return this.enqueue(async () => {
+      const records = await this.readRecords("snapshots.jsonl");
+      return records
+        .filter((record): record is Extract<JsonLineRecord, { kind: "snapshot" }> => record.kind === "snapshot")
+        .map((record) => record.snapshot)
+        .slice(-Math.max(1, limit));
     });
   }
 

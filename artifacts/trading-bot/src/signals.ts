@@ -7,6 +7,7 @@ import { recommendDynamicSlippageBps } from "./slippage.js";
 export type SignalContext = {
   previous?: MarketSnapshot;
   now: MarketSnapshot;
+  history?: MarketSnapshot[];
 };
 
 export type SignalEngineOptions = {
@@ -30,14 +31,17 @@ export class SignalEngine {
       const previous = context.previous?.pools.find((item) => item.address === pool.address);
       const deltas = computeDeltas(pool, previous);
       const profile = deriveProfile(pool, previous, this.options);
-      const poolSignals = buildSignalsForPool(
-        pool,
-        context.now.capturedAt,
-        deltas,
-        profile,
-        previous,
-        this.options,
-        context.now.pools,
+    const poolSignals = buildSignalsForPool(
+      pool,
+      context.now.capturedAt,
+      deltas,
+      profile,
+      previous,
+      context.previous?.capturedAt,
+      this.options,
+      context.now.pools,
+      context.history ?? [],
+      context.now.capturedAt,
       );
 
       for (const signal of poolSignals) {
@@ -72,8 +76,11 @@ function buildSignalsForPool(
   deltas: ReturnType<typeof computeDeltas>,
   profile: DerivedProfile,
   previous: PoolSnapshot | undefined,
+  previousCapturedAt: string | undefined,
   options: SignalEngineOptions,
   universe: PoolSnapshot[],
+  history: MarketSnapshot[],
+  capturedAt: string,
 ) {
   const signals: Signal[] = [];
   const minDegenScore = options.minDegenScore ?? 30;
@@ -85,7 +92,10 @@ function buildSignalsForPool(
     pool,
     previous,
     universe,
+    history,
+    capturedAt,
     context: profile as PoolIntelligenceContext,
+    previousCapturedAt,
   });
 
   const rugTriggered =
@@ -342,7 +352,7 @@ function buildSignalsForPool(
     );
   }
 
-  if (intelligence.tickRange.confidence >= 0.72 && profile.degenScore >= minDegenScore + 10) {
+  if (intelligence.tickRange && intelligence.tickRange.confidence >= 0.65) {
     signals.push(
       createSignal({
         createdAt,
@@ -356,6 +366,7 @@ function buildSignalsForPool(
         slippageBps: recommendDynamicSlippageBps(pool, "REBALANCE", 45, pool.tvlUsd * 0.15, 140),
         priorityFeeMicroLamports: 2_100,
         reasons: [
+          `Regression R² ${intelligence.tickRange.regressionR2.toFixed(2)} from ${intelligence.tickRange.sampleCount} samples`,
           `Forecast move ${intelligence.tickRange.predictedMoveBps.toFixed(0)} bps over ${intelligence.tickRange.horizonMinutes}m`,
           `Tick center ${intelligence.tickRange.centerBinId}`,
           `Predicted band ${intelligence.tickRange.lowerBinId}-${intelligence.tickRange.upperBinId}`,
@@ -372,7 +383,7 @@ function buildSignalsForPool(
     );
   }
 
-  if (intelligence.liquidityVacuumScore >= 72) {
+  if (intelligence.liquidityVacuum.eligible) {
     signals.push(
       createSignal({
         createdAt,
@@ -380,15 +391,15 @@ function buildSignalsForPool(
         profile,
         type: "LIQUIDITY_VACUUM",
         action: "ADD_LIQUIDITY",
-        confidence: clamp01(0.72 + intelligence.liquidityVacuumScore / 250),
-        severity: Math.min(98, Math.round(76 + intelligence.liquidityVacuumScore * 0.25)),
+        confidence: clamp01(0.72 + intelligence.liquidityVacuum.tvlDrawdownPct / 200),
+        severity: Math.min(98, Math.round(76 + intelligence.liquidityVacuum.tvlDrawdownPct * 0.25)),
         capitalScale: 0.12,
         slippageBps: recommendDynamicSlippageBps(pool, "ADD_LIQUIDITY", 40, pool.tvlUsd * 0.1, 130),
         priorityFeeMicroLamports: 2_600,
         reasons: [
-          `TVL pullback detected with score ${intelligence.liquidityVacuumScore.toFixed(1)}`,
-          `TVL ${previous ? `${previous.tvlUsd.toFixed(0)} -> ${pool.tvlUsd.toFixed(0)}` : pool.tvlUsd.toFixed(0)}`,
-          "Fee pressure remained elevated while others likely de-risked",
+          `TVL drawdown ${intelligence.liquidityVacuum.tvlDrawdownPct.toFixed(1)}%`,
+          `Volume retention ${intelligence.liquidityVacuum.volumeRetentionPct.toFixed(1)}%`,
+          `Fee-rate expansion ${intelligence.liquidityVacuum.feeRateExpansionPct.toFixed(1)}%`,
         ],
         variant: "liquidity-vacuum",
         executionHints: {
@@ -401,7 +412,7 @@ function buildSignalsForPool(
     );
   }
 
-  if (intelligence.walletFingerprintRisk >= 65 || profile.previousRugsByDev >= maxPreviousRugsByDev) {
+  if (intelligence.walletFingerprint.eligible) {
     signals.push(
       createSignal({
         createdAt,
@@ -409,15 +420,15 @@ function buildSignalsForPool(
         profile,
         type: "WALLET_FINGERPRINT",
         action: "REMOVE_LIQUIDITY",
-        confidence: clamp01(0.6 + intelligence.walletFingerprintRisk / 180),
-        severity: Math.min(99, Math.round(70 + intelligence.walletFingerprintRisk * 0.3)),
+        confidence: clamp01(0.68 + Math.min(0.24, intelligence.walletFingerprint.priorRugsByDev / 20)),
+        severity: Math.min(99, Math.round(72 + intelligence.walletFingerprint.priorRugsByDev * 4)),
         capitalScale: 0.15,
         slippageBps: recommendDynamicSlippageBps(pool, "REMOVE_LIQUIDITY", 35, pool.tvlUsd * 0.1, 130),
         priorityFeeMicroLamports: 2_900,
         reasons: [
-          `Creator fingerprint risk ${intelligence.walletFingerprintRisk.toFixed(1)}`,
-          `Prior rugs ${profile.previousRugsByDev}`,
-          `Dev wallet age ${estimateDevWalletAgeDays(pool.createdAt)}d`,
+          `Creator ${intelligence.walletFingerprint.creatorAddress}`,
+          `Fingerprint ${intelligence.walletFingerprint.fingerprintId}`,
+          `Trigger ${intelligence.walletFingerprint.triggerReason}`,
         ],
         variant: "wallet-blacklist",
         executionHints: {
@@ -425,14 +436,14 @@ function buildSignalsForPool(
           minDelayMs: 0,
           maxDelayMs: 200,
           priorityProtection: "MAX",
-          fingerprintRisk: intelligence.walletFingerprintRisk,
+          fingerprintRisk: Math.min(100, intelligence.walletFingerprint.priorRugsByDev * 20),
           hedgeTo: "USDC",
         },
       }),
     );
   }
 
-  if (intelligence.feeCompoundingRatio >= 12 && pool.tvlUsd >= 25_000) {
+  if (intelligence.feeCompounding.eligible) {
     signals.push(
       createSignal({
         createdAt,
@@ -440,15 +451,15 @@ function buildSignalsForPool(
         profile,
         type: "FEE_COMPOUNDING_FLYWHEEL",
         action: "REBALANCE",
-        confidence: clamp01(0.68 + Math.min(0.25, intelligence.feeCompoundingRatio / 120)),
-        severity: Math.min(94, Math.round(72 + Math.min(18, intelligence.feeCompoundingRatio))),
+        confidence: clamp01(0.68 + Math.min(0.25, intelligence.feeCompounding.ratio / 120)),
+        severity: Math.min(94, Math.round(72 + Math.min(18, intelligence.feeCompounding.ratio))),
         capitalScale: 0.18,
         slippageBps: recommendDynamicSlippageBps(pool, "REBALANCE", 40, pool.tvlUsd * 0.12, 130),
         priorityFeeMicroLamports: 1_850,
         reasons: [
-          `Fee compounding ratio ${intelligence.feeCompoundingRatio.toFixed(1)}x`,
-          `Fees ${pool.fee24hUsd.toFixed(0)} USD vs execution cost curve`,
-          "Reinvest and widen range with profits",
+          `Fee / execution cost ratio ${intelligence.feeCompounding.ratio.toFixed(1)}x`,
+          `Execution cost ${intelligence.feeCompounding.executionCostUsd.toFixed(2)} USD`,
+          `Threshold ${intelligence.feeCompounding.threshold.toFixed(1)}x`,
         ],
         variant: "fee-compound",
         executionHints: {
@@ -456,13 +467,13 @@ function buildSignalsForPool(
           minDelayMs: 0,
           maxDelayMs: 1_500,
           priorityProtection: "HIGH",
-          compoundingRatio: intelligence.feeCompoundingRatio,
+          compoundingRatio: intelligence.feeCompounding.ratio,
         },
       }),
     );
   }
 
-  if (intelligence.narrativeCluster.score >= 58 && intelligence.narrativeCluster.relatedPools.length > 0) {
+  if (intelligence.narrativeCluster.eligible) {
     signals.push(
       createSignal({
         createdAt,
@@ -476,9 +487,9 @@ function buildSignalsForPool(
         slippageBps: recommendDynamicSlippageBps(pool, "ADD_LIQUIDITY", 45, pool.tvlUsd * 0.12, 140),
         priorityFeeMicroLamports: 2_050,
         reasons: [
-          `Narrative cluster score ${intelligence.narrativeCluster.score.toFixed(1)}`,
+          `Shared-holder overlap score ${intelligence.narrativeCluster.score.toFixed(1)}`,
           `Related pools ${intelligence.narrativeCluster.relatedPools.length}`,
-          "Shared holder / symbol contagion candidate",
+          `Overlap max ${Math.max(...Object.values(intelligence.narrativeCluster.overlapRatios), 0).toFixed(2)}`,
         ],
         variant: "narrative-graph",
         executionHints: {
@@ -492,7 +503,7 @@ function buildSignalsForPool(
     );
   }
 
-  if (intelligence.deadPoolScore >= 75) {
+  if (intelligence.deadPool.eligible) {
     signals.push(
       createSignal({
         createdAt,
@@ -500,15 +511,15 @@ function buildSignalsForPool(
         profile,
         type: "DEAD_POOL_RESURRECTOR",
         action: "ADD_LIQUIDITY",
-        confidence: clamp01(0.58 + intelligence.deadPoolScore / 200),
-        severity: Math.min(92, Math.round(66 + intelligence.deadPoolScore * 0.32)),
+        confidence: clamp01(0.58 + Math.min(0.3, intelligence.deadPool.volumeToTvlRatio / 2)),
+        severity: Math.min(92, Math.round(66 + intelligence.deadPool.volumeToTvlRatio * 120)),
         capitalScale: 0.08,
         slippageBps: recommendDynamicSlippageBps(pool, "ADD_LIQUIDITY", 35, pool.tvlUsd * 0.08, 100),
         priorityFeeMicroLamports: 1_650,
         reasons: [
-          `Dead-pool score ${intelligence.deadPoolScore.toFixed(1)}`,
-          `TVL ${pool.tvlUsd.toFixed(0)} USD with tail volume intact`,
-          "Residual fee harvest opportunity",
+          `Age ${intelligence.deadPool.ageHours.toFixed(1)}h`,
+          `TVL ${intelligence.deadPool.tvlUsd.toFixed(0)} USD`,
+          `Volume / TVL ${intelligence.deadPool.volumeToTvlRatio.toFixed(2)}`,
         ],
         variant: "dead-pool",
         executionHints: {
@@ -521,7 +532,7 @@ function buildSignalsForPool(
     );
   }
 
-  if (intelligence.executionAuction.candidates.length > 0 && pool.signalScore >= minDegenScore + 15) {
+  if (intelligence.executionAuction.candidates.length > 0) {
     signals.push(
       createSignal({
         createdAt,
@@ -535,6 +546,7 @@ function buildSignalsForPool(
         slippageBps: recommendDynamicSlippageBps(pool, pool.signalSeed === "AVOID" ? "SWAP" : "ADD_LIQUIDITY", 45, pool.tvlUsd * 0.12, 140),
         priorityFeeMicroLamports: 2_300,
         reasons: [
+          ...intelligence.executionAuction.rationale,
           `Execution auction over ${intelligence.executionAuction.candidates.join(", ")}`,
           `Preferred route ${intelligence.executionAuction.preferredRoute}`,
           `Simulation budget ${intelligence.executionAuction.simulationBudgetMs}ms`,
@@ -551,7 +563,7 @@ function buildSignalsForPool(
     );
   }
 
-  if (intelligence.phantomLiquidityScore >= 72) {
+  if (intelligence.phantomLiquidity.eligible) {
     signals.push(
       createSignal({
         createdAt,
@@ -559,15 +571,15 @@ function buildSignalsForPool(
         profile,
         type: "PHANTOM_LIQUIDITY",
         action: "REMOVE_LIQUIDITY",
-        confidence: clamp01(0.62 + intelligence.phantomLiquidityScore / 180),
-        severity: Math.min(96, Math.round(70 + intelligence.phantomLiquidityScore * 0.35)),
+        confidence: clamp01(0.62 + Math.min(0.28, intelligence.phantomLiquidity.honeypotSimulationBps / 600)),
+        severity: Math.min(96, Math.round(70 + intelligence.phantomLiquidity.honeypotSimulationBps * 0.25)),
         capitalScale: 0.1,
         slippageBps: recommendDynamicSlippageBps(pool, "REMOVE_LIQUIDITY", 35, pool.tvlUsd * 0.1, 150),
         priorityFeeMicroLamports: 2_750,
         reasons: [
-          `Phantom liquidity score ${intelligence.phantomLiquidityScore.toFixed(1)}`,
-          "MEV pressure detected around sentinel ranges",
-          "Tripwire position recommends defensive response",
+          `MEV attacks ${intelligence.phantomLiquidity.mevAttackCount}`,
+          `Honeypot simulation ${intelligence.phantomLiquidity.honeypotSimulationBps.toFixed(0)} bps`,
+          `Trap budget ${intelligence.phantomLiquidity.trapBudgetUsd.toFixed(2)} USD`,
         ],
         variant: "phantom-liquidity",
         executionHints: {

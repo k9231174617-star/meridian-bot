@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { MarketSnapshot } from "./domain.js";
 import { SignalEngine } from "./signals.js";
 
 const snapshot = {
@@ -73,7 +74,7 @@ const snapshot = {
     },
   ],
   prices: [],
-} as const;
+} satisfies MarketSnapshot;
 
 test("signal engine prioritizes healthy pools and exits risky ones", () => {
   const engine = new SignalEngine();
@@ -125,11 +126,15 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
         signalSeed: "ENTER",
         currentPrice: 1.03,
         activeBinId: 96,
+        creatorAddress: "CreatorA11111111111111111111111111111111111",
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         liquidityLocked: true,
         topHolderSharePct: 18,
         topTenHolderSharePct: 28,
+        topHolderWallets: ["wallet-a", "wallet-b", "wallet-c", "wallet-d", "wallet-e"],
+        mevAttackCount: 2,
+        honeypotSimulationBps: 180,
         createdAt: "2026-05-15T00:00:00.000Z",
       },
       {
@@ -202,7 +207,7 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
       },
     ],
     prices: [],
-  } as const;
+  } satisfies MarketSnapshot;
 
   const current = {
     capturedAt: "2026-06-01T00:00:00.000Z",
@@ -241,6 +246,9 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
         liquidityLocked: true,
         topHolderSharePct: 18,
         topTenHolderSharePct: 28,
+        topHolderWallets: ["wallet-a", "wallet-b", "wallet-c", "wallet-d", "wallet-e"],
+        mevAttackCount: 2,
+        honeypotSimulationBps: 180,
         createdAt: "2026-05-15T00:00:00.000Z",
       },
       {
@@ -270,11 +278,13 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
         signalSeed: "ENTER",
         currentPrice: 0.89,
         activeBinId: 59,
+        creatorAddress: "CreatorB11111111111111111111111111111111111",
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         liquidityLocked: true,
         topHolderSharePct: 17,
         topTenHolderSharePct: 25,
+        topHolderWallets: ["wallet-a", "wallet-b", "wallet-c", "wallet-z", "wallet-y"],
         createdAt: "2026-05-20T00:00:00.000Z",
       },
       {
@@ -304,6 +314,7 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
         signalSeed: "WATCH",
         currentPrice: 0.022,
         activeBinId: 14,
+        creatorAddress: "CreatorC11111111111111111111111111111111111",
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         liquidityLocked: true,
@@ -313,9 +324,92 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
       },
     ],
     prices: [],
-  } as const;
+  } satisfies MarketSnapshot;
 
-  const result = engine.generate({ previous: previous as never, now: current as never });
+  const history: MarketSnapshot[] = [
+    {
+      capturedAt: "2026-05-31T18:00:00.000Z",
+      pools: previous.pools.map((pool) =>
+        pool.address === "pool-forecast"
+          ? {
+              ...pool,
+              currentPrice: 0.84,
+              activeBinId: 84,
+              tvlUsd: 1_180_000,
+              volume24hUsd: 1_000_000,
+              fee24hUsd: 9_200,
+            }
+          : pool.address === "pool-related"
+            ? {
+                ...pool,
+                currentPrice: 0.79,
+                activeBinId: 51,
+                tvlUsd: 410_000,
+                volume24hUsd: 480_000,
+                fee24hUsd: 2_900,
+              }
+            : {
+                ...pool,
+                currentPrice: 0.021,
+                activeBinId: 11,
+                tvlUsd: 2_800,
+                volume24hUsd: 7_600,
+                fee24hUsd: 140,
+              },
+      ),
+      prices: [],
+    },
+    {
+      capturedAt: "2026-05-31T20:00:00.000Z",
+      pools: previous.pools.map((pool) =>
+        pool.address === "pool-forecast"
+          ? {
+              ...pool,
+              currentPrice: 0.98,
+              activeBinId: 90,
+              tvlUsd: 1_160_000,
+              volume24hUsd: 1_080_000,
+              fee24hUsd: 9_600,
+            }
+          : pool,
+      ),
+      prices: [],
+    },
+    {
+      capturedAt: "2026-05-31T22:00:00.000Z",
+      pools: previous.pools.map((pool) =>
+        pool.address === "pool-forecast"
+          ? {
+              ...pool,
+              currentPrice: 1.16,
+              activeBinId: 98,
+              tvlUsd: 1_100_000,
+              volume24hUsd: 1_180_000,
+              fee24hUsd: 10_400,
+            }
+          : pool,
+      ),
+      prices: [],
+    },
+    {
+      capturedAt: "2026-05-31T23:30:00.000Z",
+      pools: previous.pools.map((pool) =>
+        pool.address === "pool-forecast"
+          ? {
+              ...pool,
+              currentPrice: 1.28,
+              activeBinId: 101,
+              tvlUsd: 1_050_000,
+              volume24hUsd: 1_240_000,
+              fee24hUsd: 10_900,
+            }
+          : pool,
+      ),
+      prices: [],
+    },
+  ] as const;
+
+  const result = engine.generate({ previous: previous as never, now: current as never, history: [...history, previous as never] });
   const types = new Set(result.map((signal) => signal.type));
 
   assert.ok(types.has("TICK_RANGE_PROPHET"));

@@ -136,6 +136,7 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   const smartMoneyScore = computeSmartMoneyScore(tvlUsd, volume24hUsd, feeRatePct);
   const holderGini = toOptionalNumber(record.holder_gini ?? record.holderGini) ?? estimateHolderGini(topHolderSharePct, topTenHolderSharePct);
   const devWalletAgeDays = toOptionalNumber(record.dev_wallet_age_days ?? record.devWalletAgeDays) ?? estimateDevWalletAgeDays(createdAt);
+  const creatorAddress = toString(record.creator_address ?? record.creatorAddress ?? record.owner ?? record.creator);
   const previousRugsByDev = toInteger(record.previous_rugs_by_dev ?? record.previousRugsByDev, 0);
   const contractRiskScore = toOptionalNumber(record.contract_risk_score ?? record.contractRiskScore) ?? estimateContractRiskScore({
     mintAuthorityRevoked,
@@ -169,6 +170,9 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
   const eventWindowActive = toOptionalBoolean(record.event_window_active ?? record.eventWindowActive);
   const eventName = toString(record.event_name ?? record.eventName);
   const eventBlocksRemaining = toOptionalNumber(record.event_blocks_remaining ?? record.eventBlocksRemaining);
+  const topHolderWallets = toStringArray(record.top_holder_wallets ?? record.topHolderWallets ?? record.holder_wallets ?? record.holderWallets);
+  const mevAttackCount = toOptionalNumber(record.mev_attack_count ?? record.mevAttackCount);
+  const honeypotSimulationBps = toOptionalNumber(record.honeypot_simulation_bps ?? record.honeypotSimulationBps);
   const fdvUsd = toOptionalNumber(record.fdv_usd ?? record.fdvUsd ?? record.market_cap ?? record.marketCap) ?? estimateFdv(tvlUsd, volume24hUsd);
   const degenScore = toOptionalNumber(record.degen_score ?? record.degenScore) ?? estimateDegenScore({
     tvlUsd,
@@ -201,6 +205,7 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
     topTenHolderSharePct,
     holderGini: round2(holderGini),
     devWalletAgeDays: round2(devWalletAgeDays),
+    creatorAddress: creatorAddress || undefined,
     previousRugsByDev,
     contractRiskScore: round2(contractRiskScore),
     bondingCurveProgressPct: bondingCurveProgressPct === undefined ? undefined : round2(bondingCurveProgressPct),
@@ -213,6 +218,9 @@ function normalizePool(record: Record<string, unknown>): PoolSnapshot {
     eventWindowActive,
     eventName: eventName || undefined,
     eventBlocksRemaining: eventBlocksRemaining === undefined ? undefined : Math.round(eventBlocksRemaining),
+    topHolderWallets,
+    mevAttackCount: mevAttackCount === undefined ? undefined : Math.max(0, Math.round(mevAttackCount)),
+    honeypotSimulationBps: honeypotSimulationBps === undefined ? undefined : Math.max(0, round2(honeypotSimulationBps)),
     rugRiskScore,
     tokenSafetyScore,
     tvlUsd,
@@ -350,6 +358,14 @@ function toOptionalBoolean(value: unknown) {
     if (["false", "0", "no", "unlocked", "disabled"].includes(normalized)) return false;
   }
   return undefined;
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
+  return values.length > 0 ? [...new Set(values)] : undefined;
 }
 
 function estimateHolderGini(topHolderSharePct?: number, topTenHolderSharePct?: number) {

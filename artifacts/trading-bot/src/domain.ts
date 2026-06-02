@@ -47,6 +47,7 @@ export type PoolSnapshot = {
   degenScore?: number;
   holderGini?: number;
   devWalletAgeDays?: number;
+  creatorAddress?: string;
   previousRugsByDev?: number;
   contractRiskScore?: number;
   bondingCurveProgressPct?: number;
@@ -59,6 +60,9 @@ export type PoolSnapshot = {
   eventWindowActive?: boolean;
   eventName?: string;
   eventBlocksRemaining?: number;
+  topHolderWallets?: string[];
+  mevAttackCount?: number;
+  honeypotSimulationBps?: number;
   tvlUsd: number;
   volume24hUsd: number;
   fee24hUsd: number;
