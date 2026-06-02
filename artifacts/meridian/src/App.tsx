@@ -28,10 +28,18 @@ type WalletRow = {
   valueUsd: number;
 };
 
+type WalletOptionName = "Phantom" | "Solflare" | "Backpack" | "OKX Wallet";
+
 type PhantomProvider = {
   isPhantom?: boolean;
   publicKey?: { toBase58(): string };
   connect: (options?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey?: { toBase58(): string } } | void>;
+};
+
+type InjectedWalletProvider = PhantomProvider & {
+  isSolflare?: boolean;
+  isBackpack?: boolean;
+  isOKXWallet?: boolean;
 };
 
 type StringMap = Record<string, string>;
@@ -1103,10 +1111,27 @@ function App() {
     setWalletModalOpen(true);
   }
 
-  async function connectPhantomWallet() {
-    const provider = (window as Window & { solana?: PhantomProvider }).solana;
+  function resolveInjectedWalletProvider(providerName: WalletOptionName) {
+    const injected = window as Window & Record<string, any>;
+
+    switch (providerName) {
+      case "Phantom":
+        return (injected.solana ?? injected.phantom?.solana ?? injected.phantom) as InjectedWalletProvider | undefined;
+      case "Solflare":
+        return (injected.solflare ?? injected.solana) as InjectedWalletProvider | undefined;
+      case "Backpack":
+        return (injected.backpack ?? injected.solana) as InjectedWalletProvider | undefined;
+      case "OKX Wallet":
+        return (injected.okxwallet?.solana ?? injected.okxwallet ?? injected.okx?.solana ?? injected.solana) as InjectedWalletProvider | undefined;
+      default:
+        return undefined;
+    }
+  }
+
+  async function connectWalletProvider(providerName: WalletOptionName) {
+    const provider = resolveInjectedWalletProvider(providerName);
     if (!provider?.connect) {
-      toastMessage("Phantom wallet not detected");
+      toastMessage(`${providerName} wallet not detected`);
       return;
     }
 
@@ -1114,15 +1139,15 @@ function App() {
       const response = await provider.connect({ onlyIfTrusted: false });
       const address = response?.publicKey?.toBase58() ?? provider.publicKey?.toBase58();
       if (!address) {
-        throw new Error("Phantom did not return a wallet address");
+        throw new Error(`${providerName} did not return a wallet address`);
       }
 
       setWalletAddress(address);
-      setWalletProvider("Phantom");
+      setWalletProvider(providerName);
       setWalletConnected(true);
       setWalletModalOpen(false);
       setWalletImportError("");
-      toastMessage(`Phantom · ${shortAddress(address)} connected`);
+      toastMessage(`${providerName} · ${shortAddress(address)} connected`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toastMessage(message);
@@ -1276,6 +1301,17 @@ function App() {
   const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
   const liveTradingLabel = autoTradingEnabled ? "ENABLED" : "DISABLED";
   const liveTradingTone = autoTradingEnabled ? "running" : "failed";
+  const walletOptions: Array<{
+    name: WalletOptionName;
+    subtitle: string;
+    icon: string;
+    recommended?: boolean;
+  }> = [
+    { name: "Phantom", subtitle: "Most popular Solana wallet", icon: "👻", recommended: true },
+    { name: "Solflare", subtitle: "Native Solana wallet", icon: "☀️" },
+    { name: "Backpack", subtitle: "xNFT wallet by Coral", icon: "🎒" },
+    { name: "OKX Wallet", subtitle: "Multi-chain wallet", icon: "⭕" },
+  ];
   const paperSessionSummary = paperTradeStatus?.status === "running"
     ? `PID ${paperTradeStatus.pid ?? "?"} · cycles ${paperTradeStatus.request?.cycles ?? paperTradeCycles}`
     : paperTradeStatus?.status === "completed"
@@ -2029,30 +2065,13 @@ function App() {
               {t.connectHint}
             </div>
           </div>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="section-label mb-2">{t.walletAddress}</div>
-            <input
-              className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
-              placeholder="Paste Solana wallet address"
-              value={walletAddress}
-              onChange={(event) => setWalletAddress(event.target.value.trim())}
-            />
-          </div>
-          <div className="wallet-connect-actions">
-            <button className="connect-wallet-btn" onClick={() => void connectPhantomWallet()} type="button" id="w-connect-phantom">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="2" y="7" width="20" height="14" rx="2" />
-                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-                <circle cx="12" cy="14" r="2" />
-              </svg>
-              <span>{t.connectPhantom}</span>
-            </button>
-            <button className="connect-wallet-btn wallet-secondary-btn" onClick={openWalletImportModal} type="button" id="w-import-secret">
-              <span>{t.importSecretKey}</span>
-            </button>
-          </div>
-          <button className="modal-cancel" style={{ marginTop: 10 }} onClick={connectWalletByAddress} type="button" id="w-connect-btn">
-            {t.connectByAddress}
+          <button className="connect-wallet-btn" onClick={() => setWalletModalOpen(true)} type="button" id="w-connect-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="7" width="20" height="14" rx="2" />
+              <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+              <circle cx="12" cy="14" r="2" />
+            </svg>
+            <span>{t.connectWallet}</span>
           </button>
         </div>
 
@@ -2474,17 +2493,46 @@ function App() {
       <div className={`modal-overlay ${walletModalOpen ? "show" : ""}`} id="walletModal" onClick={() => setWalletModalOpen(false)}>
         <div className="modal-sheet" onClick={(event) => event.stopPropagation()}>
           <div className="modal-title" id="wm-title">
-            {t.selectWallet}
+            {lang === "ru" ? "CONNECT WALLET" : "CONNECT WALLET"}
           </div>
           <div className="modal-sub" id="wm-sub">
-            {t.secretKeyHint}
+            {lang === "ru" ? "Выберите Solana кошелёк для подключения" : "Select a Solana wallet to connect"}
+          </div>
+          <div className="wallet-list">
+            {walletOptions.map((option) => (
+              <button
+                className="wallet-option dashboard-card-button"
+                key={option.name}
+                type="button"
+                onClick={() => void connectWalletProvider(option.name)}
+              >
+                <div className="wo-icon">{option.icon}</div>
+                <div>
+                  <div className="wo-name">{option.name}</div>
+                  <div className="wo-sub">{option.subtitle}</div>
+                </div>
+                {option.recommended ? <div className="wo-badge" id="wm-recommended">{t.recommended}</div> : null}
+              </button>
+            ))}
           </div>
           <div className="wallet-modal-actions">
-            <button className="connect-wallet-btn" type="button" onClick={() => void connectPhantomWallet()} id="wm-connect-phantom">
+            <button className="connect-wallet-btn" type="button" onClick={() => void connectWalletProvider("Phantom")} id="wm-connect-phantom">
               {t.connectPhantom}
             </button>
-            <button className="connect-wallet-btn wallet-secondary-btn" type="button" onClick={importSecretWallet} id="wm-import-secret">
+            <button className="connect-wallet-btn wallet-secondary-btn" type="button" onClick={openWalletImportModal} id="wm-import-secret">
               {t.importSecretKey}
+            </button>
+          </div>
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div className="section-label mb-2">{t.walletAddress}</div>
+            <input
+              className="w-full rounded-xl border border-[var(--border)] bg-black/30 px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--text)] outline-none"
+              placeholder="Paste Solana wallet address"
+              value={walletAddress}
+              onChange={(event) => setWalletAddress(event.target.value.trim())}
+            />
+            <button className="connect-wallet-btn" style={{ marginTop: 10, marginBottom: 0 }} onClick={connectWalletByAddress} type="button" id="wm-connect-by-address">
+              {t.connectByAddress}
             </button>
           </div>
           <div className="card" style={{ marginBottom: 12 }}>
@@ -2500,9 +2548,6 @@ function App() {
               <div className="mt-2 text-xs text-[var(--neon-orange)]">{walletImportError}</div>
             ) : null}
           </div>
-          <button className="connect-wallet-btn" style={{ marginTop: 10 }} onClick={importSecretWallet} type="button" id="wm-connect-secret">
-            {t.importSecretKey}
-          </button>
           <button className="modal-cancel" style={{ marginTop: 8 }} onClick={() => setWalletModalOpen(false)} type="button" id="wm-cancel">
             {t.cancel}
           </button>
