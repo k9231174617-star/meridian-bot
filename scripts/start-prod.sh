@@ -15,10 +15,23 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+if [[ -n "${BOT_SIGNER_SECRET_KEY:-}" || -n "${BOT_SIGNER_SECRET_KEY_FILE:-}" ]]; then
+  bot_command=(pnpm --filter @workspace/trading-bot run live)
+  bot_mode="live"
+else
+  bot_command=(pnpm --filter @workspace/trading-bot run paper)
+  bot_mode="paper"
+fi
+
+echo "[start-prod] launching api-server + trading-bot (${bot_mode})"
+
+export BOT_STORAGE_DIR="${BOT_STORAGE_DIR:-/app/.bot-data/trading-bot}"
+mkdir -p "${BOT_STORAGE_DIR}"
+
 pnpm --filter @workspace/api-server run start &
 api_pid="$!"
 
-pnpm --filter @workspace/trading-bot run live &
+"${bot_command[@]}" &
 bot_pid="$!"
 
 wait -n "${api_pid}" "${bot_pid}"
