@@ -191,7 +191,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .wallet-option:hover{border-color:rgba(0,255,180,.28);background:linear-gradient(180deg,rgba(5,24,22,.96),rgba(3,10,11,.98));box-shadow:0 0 0 1px rgba(0,255,180,.03), inset 0 1px rgba(255,255,255,.02);}
 .wallet-option:active{transform:scale(.98);}
 .wo-icon{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;background:linear-gradient(180deg,rgba(0,0,0,.46),rgba(0,0,0,.24));border:1px solid rgba(255,255,255,.06);box-shadow:0 0 0 1px color-mix(in srgb,var(--wallet-accent) 24%, transparent), inset 0 0 16px color-mix(in srgb,var(--wallet-accent) 10%, transparent);}
-.wo-glyph{font-family:'Orbitron',monospace;font-size:16px;line-height:1;font-weight:700;color:var(--wallet-accent);text-shadow:0 0 10px color-mix(in srgb,var(--wallet-accent) 30%, transparent);}
+.wo-icon svg{width:22px;height:22px;display:block;color:var(--wallet-accent);filter:drop-shadow(0 0 10px color-mix(in srgb,var(--wallet-accent) 30%, transparent));}
 .wo-name{font-family:'Orbitron',monospace;font-size:13px;font-weight:700;line-height:1.1;color:var(--text);letter-spacing:1px;}
 .wo-sub{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:3px;letter-spacing:.4px;}
 .wo-badge{margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:8px;padding:4px 8px;border-radius:6px;background:rgba(0,255,180,.08);color:var(--neon-cyan);border:1px solid rgba(0,255,180,.22);letter-spacing:1px;white-space:nowrap;}

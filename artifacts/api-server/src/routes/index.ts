@@ -9,6 +9,7 @@ import discoveryRouter from "./discovery";
 import signalsRouter from "./signals";
 import paperTradeRouter from "./paper-trade";
 import botControlsRouter from "./bot-controls";
+import signalsDemoRouter from "./signals-demo";
 
 const router: IRouter = Router();
 
@@ -20,6 +21,7 @@ router.use("/analytics", analyticsRouter);
 router.use("/bot", botRouter);
 router.use("/bot/discovery", discoveryRouter);
 router.use("/bot/signals", signalsRouter);
+router.use("/bot/signals/demo", signalsDemoRouter);
 router.use("/bot/paper-trade", paperTradeRouter);
 router.use("/bot/controls", botControlsRouter);
 

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type WalletName } from "@solana/wallet-adapter-base";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -1422,14 +1422,65 @@ function App() {
   const walletOptions: Array<{
     name: WalletOptionName;
     subtitle: string;
-    icon: string;
+    icon: ReactNode;
     accent: string;
     recommended?: boolean;
   }> = [
-    { name: "Phantom", subtitle: "Most popular Solana wallet", icon: "P", accent: "var(--neon-cyan)", recommended: true },
-    { name: "Solflare", subtitle: "Native Solana wallet", icon: "S", accent: "var(--neon-yellow)" },
-    { name: "Backpack", subtitle: "xNFT wallet by Coral", icon: "B", accent: "var(--neon-orange)" },
-    { name: "OKX Wallet", subtitle: "Multi-chain wallet", icon: "OK", accent: "var(--neon-red)" },
+    {
+      name: "Phantom",
+      subtitle: "Most popular Solana wallet",
+      accent: "var(--neon-cyan)",
+      recommended: true,
+      icon: (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M10 33c0-7.7 6.1-14 13.7-14H38v4.4c0 7.7-6.4 14-14 14H10V33Z" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M18.2 18.2c.9-5.3 4.9-9.2 9.8-9.2 5.6 0 10.1 4.6 10.1 10.3 0 7.2-5.8 13.1-13 13.1H19" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" opacity=".85" />
+          <path d="M14.5 34.5h10.2" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+        </svg>
+      ),
+    },
+    {
+      name: "Solflare",
+      subtitle: "Native Solana wallet",
+      accent: "var(--neon-yellow)",
+      icon: (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <defs>
+            <linearGradient id="solflare-g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity=".95" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity=".45" />
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="24" r="10" fill="none" stroke="url(#solflare-g)" strokeWidth="3" />
+          <path d="M24 6v7M24 35v7M6 24h7M35 24h7M11.5 11.5l5 5M31.5 31.5l5 5M36.5 11.5l-5 5M11.5 36.5l5-5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+        </svg>
+      ),
+    },
+    {
+      name: "Backpack",
+      subtitle: "xNFT wallet by Coral",
+      accent: "var(--neon-orange)",
+      icon: (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M17 15c0-3.9 3.1-7 7-7s7 3.1 7 7v3h2.5A4.5 4.5 0 0 1 38 22.5V35c0 4.4-3.6 8-8 8H18c-4.4 0-8-3.6-8-8V22.5A4.5 4.5 0 0 1 14.5 18H17v-3Z" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinejoin="round" />
+          <path d="M18 23h12M18 29h12" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+          <path d="M20 15c0-2.8 1.8-5 4-5s4 2.2 4 5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" />
+        </svg>
+      ),
+    },
+    {
+      name: "OKX Wallet",
+      subtitle: "Multi-chain wallet",
+      accent: "var(--neon-red)",
+      icon: (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="8" y="8" width="12" height="12" rx="3" fill="currentColor" opacity=".92" />
+          <rect x="28" y="8" width="12" height="12" rx="3" fill="currentColor" opacity=".92" />
+          <rect x="8" y="28" width="12" height="12" rx="3" fill="currentColor" opacity=".92" />
+          <rect x="28" y="28" width="12" height="12" rx="3" fill="currentColor" opacity=".92" />
+        </svg>
+      ),
+    },
   ];
   const paperSessionSummary = paperTradeStatus?.status === "running"
     ? `PID ${paperTradeStatus.pid ?? "?"} · cycles ${paperTradeStatus.request?.cycles ?? paperTradeCycles}`
@@ -2628,7 +2679,7 @@ function App() {
                 style={{ ["--wallet-accent" as string]: option.accent }}
               >
                 <div className="wo-icon" aria-hidden="true">
-                  <span className="wo-glyph">{option.icon}</span>
+                  {option.icon}
                 </div>
                 <div>
                   <div className="wo-name">{option.name}</div>
