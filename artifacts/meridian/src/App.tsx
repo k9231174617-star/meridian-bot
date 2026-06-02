@@ -478,9 +478,19 @@ function TokenBadge({ symbol, colorClass, label }: { symbol: string; colorClass:
   return <div className={`token-avatar ${colorClass}`}>{label ?? symbol}</div>;
 }
 
-function MetricBox({ value, label, valueClass = "" }: { value: string; label: string; valueClass?: string }) {
+function MetricBox({
+  value,
+  label,
+  valueClass = "",
+  compact = false,
+}: {
+  value: string;
+  label: string;
+  valueClass?: string;
+  compact?: boolean;
+}) {
   return (
-    <div className="metric">
+    <div className={`metric ${compact ? "metric-compact" : ""}`}>
       <div className={`metric-val ${valueClass}`}>{value}</div>
       <div className="metric-lbl">{label}</div>
     </div>
@@ -1242,48 +1252,48 @@ function App() {
 
         <div className="settings-section">
           <div className="section-label mb-3">BOT RUNTIME</div>
-          <div className="grid grid-auto-fit gap-3">
-            <div className="metric">
+          <div className="grid grid-auto-fit-compact gap-2">
+            <div className="metric metric-compact">
               <div className="metric-val">{botStatus?.lastRun ? botStatus.lastRun.status.toUpperCase() : "NO RUN"}</div>
               <div className="metric-lbl">Last run</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{botStatus?.lastRun?.mode?.toUpperCase() ?? "N/A"}</div>
               <div className="metric-lbl">Mode</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}</div>
               <div className="metric-lbl">Data source</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{Number(runSummary.snapshots ?? 0)}</div>
               <div className="metric-lbl">Snapshots</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{Number(runSummary.signals ?? 0)}</div>
               <div className="metric-lbl">Signals</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{Number(runSummary.approved ?? 0)}</div>
               <div className="metric-lbl">Approved</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{Number(summaryExecutions ?? 0)}</div>
               <div className="metric-lbl">Executions</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{enabledDexes.length}</div>
               <div className="metric-lbl">DEX enabled</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{discoveryCandidates.length}</div>
               <div className="metric-lbl">Discovered</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{botStatus?.recentAlerts.length ?? 0}</div>
               <div className="metric-lbl">Recent alerts</div>
             </div>
-            <div className="metric">
+            <div className="metric metric-compact">
               <div className="metric-val">{botStatus ? formatRelativeShort(botStatus.updatedAt) : "—"}</div>
               <div className="metric-lbl">Updated</div>
             </div>
@@ -1337,13 +1347,13 @@ function App() {
             </div>
           </div>
           <div className="section-title mt-4">{t.marketSnapshot}</div>
-          <div className="grid grid-auto-fit gap-3">
-            <MetricBox value={apiHealthy ? "OK" : "DEGRADED"} label="API HEALTH" valueClass={apiHealthy ? "green" : "orange"} />
-            <MetricBox value={botStatus?.lastRun?.status?.toUpperCase() ?? "NO RUN"} label="BOT STATUS" valueClass="cyan" />
-            <MetricBox value={latestAlert ? latestAlert.severity.toUpperCase() : "NONE"} label="LATEST ALERT" valueClass={latestAlert?.severity === "warning" ? "orange" : "violet"} />
-            <MetricBox value={`${discoveryTotals.candidates}`} label="DISCOVERY CANDIDATES" valueClass="green" />
-            <MetricBox value={`${poolsQuery.data?.total ?? 0}`} label="LIVE POOLS" valueClass="cyan" />
-            <MetricBox value={`${Math.round(winRate)}%`} label={t.winRate} valueClass="violet" />
+          <div className="grid grid-auto-fit-compact gap-2">
+            <MetricBox compact value={apiHealthy ? "OK" : "DEGRADED"} label="API HEALTH" valueClass={apiHealthy ? "green" : "orange"} />
+            <MetricBox compact value={botStatus?.lastRun?.status?.toUpperCase() ?? "NO RUN"} label="BOT STATUS" valueClass="cyan" />
+            <MetricBox compact value={latestAlert ? latestAlert.severity.toUpperCase() : "NONE"} label="LATEST ALERT" valueClass={latestAlert?.severity === "warning" ? "orange" : "violet"} />
+            <MetricBox compact value={`${discoveryTotals.candidates}`} label="DISCOVERY CANDIDATES" valueClass="green" />
+            <MetricBox compact value={`${poolsQuery.data?.total ?? 0}`} label="LIVE POOLS" valueClass="cyan" />
+            <MetricBox compact value={`${Math.round(winRate)}%`} label={t.winRate} valueClass="violet" />
           </div>
           <div className="paper-trade-control">
             <div className="paper-trade-row">
@@ -1400,13 +1410,13 @@ function App() {
 	      <div className="section-title" id="s-signal-feed">
 	        SIGNAL PULSE
 	      </div>
-	      <div className="grid grid-auto-fit gap-3">
-	        <MetricBox value={signalFeedQuery.isLoading ? "..." : String(signalFeed?.total ?? 0)} label="RECENT SIGNALS" valueClass="cyan" />
-	        <MetricBox value={topSignalType} label="TOP TYPE" valueClass="violet" />
-	        <MetricBox value={signalCounts.RUG_SHIELD ? String(signalCounts.RUG_SHIELD) : "0"} label="RUG SHIELD" valueClass="green" />
-	        <MetricBox value={signalCounts.SOCIAL_VELOCITY ? String(signalCounts.SOCIAL_VELOCITY) : "0"} label="SOCIAL VELOCITY" valueClass="orange" />
-	        <MetricBox value={signalCounts.WHALE_ADJUST ? String(signalCounts.WHALE_ADJUST) : "0"} label="WHALE ADJUST" valueClass="violet" />
-	        <MetricBox value={signalFeed?.updatedAt ? formatRelativeShort(signalFeed.updatedAt) : "—"} label="FEED UPDATED" valueClass="cyan" />
+	      <div className="grid grid-auto-fit-compact gap-2">
+	        <MetricBox compact value={signalFeedQuery.isLoading ? "..." : String(signalFeed?.total ?? 0)} label="RECENT SIGNALS" valueClass="cyan" />
+	        <MetricBox compact value={topSignalType} label="TOP TYPE" valueClass="violet" />
+	        <MetricBox compact value={signalCounts.RUG_SHIELD ? String(signalCounts.RUG_SHIELD) : "0"} label="RUG SHIELD" valueClass="green" />
+	        <MetricBox compact value={signalCounts.SOCIAL_VELOCITY ? String(signalCounts.SOCIAL_VELOCITY) : "0"} label="SOCIAL VELOCITY" valueClass="orange" />
+	        <MetricBox compact value={signalCounts.WHALE_ADJUST ? String(signalCounts.WHALE_ADJUST) : "0"} label="WHALE ADJUST" valueClass="violet" />
+	        <MetricBox compact value={signalFeed?.updatedAt ? formatRelativeShort(signalFeed.updatedAt) : "—"} label="FEED UPDATED" valueClass="cyan" />
 	      </div>
 	      <div className="card" style={{ marginTop: 12 }}>
 	        {signalFeedQuery.isLoading ? (
@@ -1523,10 +1533,10 @@ function App() {
                 </div>
 
                 <div className="signal-metrics">
-                  <MetricBox value={formatPercent(feeYield, 1)} label={t.fee24h} valueClass="green" />
-                  <MetricBox value={formatCurrency(pool.tvl, 1)} label={t.tvl} valueClass="cyan" />
-                  <MetricBox value={formatCurrency(pool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
-                  <MetricBox value={String(Math.round(pool.jupScore))} label={t.signalScoreShort} valueClass="violet" />
+                  <MetricBox compact value={formatPercent(feeYield, 1)} label={t.fee24h} valueClass="green" />
+                  <MetricBox compact value={formatCurrency(pool.tvl, 1)} label={t.tvl} valueClass="cyan" />
+                  <MetricBox compact value={formatCurrency(pool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
+                  <MetricBox compact value={String(Math.round(pool.jupScore))} label={t.signalScoreShort} valueClass="violet" />
                 </div>
 
                 <div className="score-row">
@@ -1602,14 +1612,14 @@ function App() {
                 <SmallBadge text={selectedPool.signalType} tone={selectedPool.signalType === PoolSignalType.ENTER ? "green" : selectedPool.signalType === PoolSignalType.AVOID ? "red" : "violet"} />
               </div>
               <div className="signal-metrics">
-                <MetricBox value={formatCurrency(selectedPool.currentPrice, 4)} label={t.currentPrice} valueClass="cyan" />
-                <MetricBox value={formatCurrency(selectedPool.tvl, 1)} label={t.tvl} valueClass="green" />
-                <MetricBox value={formatCurrency(selectedPool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
-                <MetricBox value={String(selectedPool.activeBinId)} label="ACTIVE BIN" valueClass="violet" />
-                <MetricBox value={formatPercent(selectedPoolYield, 2)} label="FEE YIELD" valueClass="green" />
-                <MetricBox value={(selectedPool.dex ?? "meteora").toUpperCase()} label="DEX" valueClass="cyan" />
-                <MetricBox value={selectedPool.discoverySource ? selectedPool.discoverySource.toUpperCase() : "API"} label="SOURCE" valueClass="violet" />
-                <MetricBox value={selectedPool.discoveryConfidence !== undefined ? `${Math.round(selectedPool.discoveryConfidence * 100)}%` : "N/A"} label="CONFIDENCE" valueClass={selectedPool.discoveryConfidence !== undefined && selectedPool.discoveryConfidence >= 0.7 ? "green" : "orange"} />
+                <MetricBox compact value={formatCurrency(selectedPool.currentPrice, 4)} label={t.currentPrice} valueClass="cyan" />
+                <MetricBox compact value={formatCurrency(selectedPool.tvl, 1)} label={t.tvl} valueClass="green" />
+                <MetricBox compact value={formatCurrency(selectedPool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
+                <MetricBox compact value={String(selectedPool.activeBinId)} label="ACTIVE BIN" valueClass="violet" />
+                <MetricBox compact value={formatPercent(selectedPoolYield, 2)} label="FEE YIELD" valueClass="green" />
+                <MetricBox compact value={(selectedPool.dex ?? "meteora").toUpperCase()} label="DEX" valueClass="cyan" />
+                <MetricBox compact value={selectedPool.discoverySource ? selectedPool.discoverySource.toUpperCase() : "API"} label="SOURCE" valueClass="violet" />
+                <MetricBox compact value={selectedPool.discoveryConfidence !== undefined ? `${Math.round(selectedPool.discoveryConfidence * 100)}%` : "N/A"} label="CONFIDENCE" valueClass={selectedPool.discoveryConfidence !== undefined && selectedPool.discoveryConfidence >= 0.7 ? "green" : "orange"} />
               </div>
               <div className="score-row">
                 <div className="score-label">{t.signalScore}</div>
@@ -1639,12 +1649,12 @@ function App() {
                 </div>
               </div>
               <div className="signal-metrics" style={{ marginTop: 16 }}>
-                <MetricBox value={selectedPool.tokenSafetyScore !== undefined ? String(Math.round(selectedPool.tokenSafetyScore)) : "N/A"} label="TOKEN SAFETY" valueClass="green" />
-                <MetricBox value={selectedPool.degenScore !== undefined ? String(Math.round(selectedPool.degenScore)) : "N/A"} label="DEGEN" valueClass="cyan" />
-                <MetricBox value={selectedPool.socialVelocityScore !== undefined ? String(Math.round(selectedPool.socialVelocityScore)) : "N/A"} label="SOCIAL" valueClass="orange" />
-                <MetricBox value={selectedPool.whalePressureScore !== undefined ? String(Math.round(selectedPool.whalePressureScore)) : "N/A"} label="WHALE PRESSURE" valueClass="violet" />
-                <MetricBox value={selectedPool.previousRugsByDev !== undefined ? String(selectedPool.previousRugsByDev) : "N/A"} label="PRIOR RUGS" valueClass="orange" />
-                <MetricBox value={selectedPool.eventWindowActive ? (selectedPool.eventName ?? "ACTIVE") : "CLOSED"} label="EVENT WINDOW" valueClass={selectedPool.eventWindowActive ? "green" : "orange"} />
+                <MetricBox compact value={selectedPool.tokenSafetyScore !== undefined ? String(Math.round(selectedPool.tokenSafetyScore)) : "N/A"} label="TOKEN SAFETY" valueClass="green" />
+                <MetricBox compact value={selectedPool.degenScore !== undefined ? String(Math.round(selectedPool.degenScore)) : "N/A"} label="DEGEN" valueClass="cyan" />
+                <MetricBox compact value={selectedPool.socialVelocityScore !== undefined ? String(Math.round(selectedPool.socialVelocityScore)) : "N/A"} label="SOCIAL" valueClass="orange" />
+                <MetricBox compact value={selectedPool.whalePressureScore !== undefined ? String(Math.round(selectedPool.whalePressureScore)) : "N/A"} label="WHALE PRESSURE" valueClass="violet" />
+                <MetricBox compact value={selectedPool.previousRugsByDev !== undefined ? String(selectedPool.previousRugsByDev) : "N/A"} label="PRIOR RUGS" valueClass="orange" />
+                <MetricBox compact value={selectedPool.eventWindowActive ? (selectedPool.eventName ?? "ACTIVE") : "CLOSED"} label="EVENT WINDOW" valueClass={selectedPool.eventWindowActive ? "green" : "orange"} />
               </div>
               <div className="signal-footer">
                 <div className="signal-time">{t.updated}: {poolsQuery.data?.lastUpdated ?? "—"}</div>
