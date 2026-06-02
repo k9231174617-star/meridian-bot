@@ -43,6 +43,11 @@ type InjectedWalletProvider = PhantomProvider & {
   isOKXWallet?: boolean;
 };
 
+type WalletConnectSession = {
+  publicKeyBase58: string;
+  createdAt: number;
+};
+
 type StringMap = Record<string, string>;
 type RunSummary = {
   snapshots?: number;
@@ -445,6 +450,38 @@ function shortAddress(address: string) {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
+function encodeBase58(bytes: Uint8Array): string {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  if (bytes.length === 0) return "";
+
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let index = 0; index < digits.length; index += 1) {
+      const value = (digits[index] << 8) + carry;
+      digits[index] = value % 58;
+      carry = Math.floor(value / 58);
+    }
+
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+
+  let output = "";
+  for (const byte of bytes) {
+    if (byte === 0) output += alphabet[0];
+    else break;
+  }
+
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    output += alphabet[digits[index]];
+  }
+
+  return output;
+}
+
 function formatCurrency(value: number, maximumFractionDigits = 0) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -675,10 +712,13 @@ function App() {
   );
   const [enabledDexes, setEnabledDexes] = useState<SupportedDex[]>(["meteora", "raydium", "orca"]);
   const { select, connect, wallet: activeAdapterWallet, connected: adapterConnected, publicKey: adapterPublicKey, wallets: adapterWallets } = useWallet();
+  const walletConnectSessionRef = useRef<WalletConnectSession | null>(null);
+  const [walletConnectReady, setWalletConnectReady] = useState(false);
 
   const t = STRINGS[lang];
   const walletValid = walletAddress.trim().length >= 32;
   const canQueryWallet = walletConnected && walletValid;
+  const isMobileDevice = useMemo(() => /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent), []);
   const adapterWalletNames = useMemo<Set<string>>(
     () => new Set(adapterWallets.map((entry) => entry.adapter.name)),
     [adapterWallets],
@@ -751,6 +791,35 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(CHIP_KEY, chip);
   }, [chip]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function prepareWalletConnectSession() {
+      try {
+        setWalletConnectReady(false);
+        const keyPair = (await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as CryptoKeyPair;
+        const rawPublicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+        if (cancelled) return;
+
+        walletConnectSessionRef.current = {
+          publicKeyBase58: encodeBase58(rawPublicKey),
+          createdAt: Date.now(),
+        };
+        setWalletConnectReady(true);
+      } catch {
+        if (cancelled) return;
+        walletConnectSessionRef.current = null;
+        setWalletConnectReady(false);
+      }
+    }
+
+    void prepareWalletConnectSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!adapterConnected || !adapterPublicKey || !activeAdapterWallet) return;
@@ -1126,22 +1195,44 @@ function App() {
     }
   }
 
-  function openWalletApp(providerName: WalletOptionName) {
-    const currentUrl = encodeURIComponent(window.location.href);
-    const ref = encodeURIComponent(window.location.origin);
-    const okxDeepLink = `okx://wallet/dapp/url?dappUrl=${currentUrl}`;
+  function buildMobileWalletConnectUrl(providerName: WalletOptionName) {
+    const session = walletConnectSessionRef.current;
+    if (!session?.publicKeyBase58) {
+      throw new Error("Wallet connection session is still preparing");
+    }
 
-    const urlByWallet: Record<WalletOptionName, string> = {
-      Phantom: `https://phantom.app/ul/browse/${currentUrl}?ref=${ref}`,
-      Solflare: `https://solflare.com/ul/v1/browse/${currentUrl}?ref=${ref}`,
-      Backpack: `https://backpack.app/ul/v1/browse/${currentUrl}?ref=${ref}`,
-      "OKX Wallet": okxDeepLink,
-    };
+    const appUrl = encodeURIComponent(window.location.origin);
+    const redirectLink = encodeURIComponent(window.location.href);
+    const cluster = "mainnet-beta";
 
-    window.location.href = urlByWallet[providerName];
+    switch (providerName) {
+      case "Phantom":
+        return `https://phantom.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}`;
+      case "Solflare":
+        return `https://solflare.com/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`;
+      case "Backpack":
+        return `https://backpack.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`;
+      case "OKX Wallet": {
+        const okxDeepLink = `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(window.location.href)}`;
+        return `https://web3.okx.com/download?deeplink=${encodeURIComponent(okxDeepLink)}`;
+      }
+      default:
+        return window.location.href;
+    }
   }
 
   async function connectWalletProvider(providerName: WalletOptionName) {
+    if (isMobileDevice) {
+      try {
+        const url = buildMobileWalletConnectUrl(providerName);
+        window.location.href = url;
+        return;
+      } catch (error) {
+        toastMessage(error instanceof Error ? error.message : String(error));
+        return;
+      }
+    }
+
     if (providerName === "Phantom" || providerName === "Solflare") {
       if (adapterWalletNames.has(providerName)) {
         try {
@@ -1152,7 +1243,7 @@ function App() {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (/not ready|not detected|not installed/i.test(message)) {
-            openWalletApp(providerName);
+            window.location.href = buildMobileWalletConnectUrl(providerName);
             toastMessage(`Opening ${providerName}`);
             return;
           }
@@ -1161,14 +1252,14 @@ function App() {
         }
       }
 
-      openWalletApp(providerName);
+      window.location.href = buildMobileWalletConnectUrl(providerName);
       toastMessage(`Opening ${providerName}`);
       return;
     }
 
     const provider = resolveInjectedWalletProvider(providerName);
     if (!provider?.connect) {
-      openWalletApp(providerName);
+      window.location.href = buildMobileWalletConnectUrl(providerName);
       toastMessage(`Opening ${providerName}`);
       return;
     }
@@ -1188,7 +1279,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/not ready|not detected|not installed/i.test(message)) {
-        openWalletApp(providerName);
+        window.location.href = buildMobileWalletConnectUrl(providerName);
         toastMessage(`Opening ${providerName}`);
         return;
       }
@@ -2500,6 +2591,7 @@ function App() {
                 key={option.name}
                 type="button"
                 onClick={() => void connectWalletProvider(option.name)}
+                disabled={isMobileDevice && !walletConnectReady}
                 style={{ ["--wallet-accent" as string]: option.accent }}
               >
                 <div className="wo-icon" aria-hidden="true">
