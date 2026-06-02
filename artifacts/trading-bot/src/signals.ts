@@ -374,6 +374,8 @@ function buildSignalsForPool(
           `Forecast move ${intelligence.tickRange.predictedMoveBps.toFixed(0)} bps over ${intelligence.tickRange.horizonMinutes}m`,
           `Tick center ${intelligence.tickRange.centerBinId}`,
           `Predicted band ${intelligence.tickRange.lowerBinId}-${intelligence.tickRange.upperBinId}`,
+          `Token profile ${intelligence.tickRange.tokenProfile.category} (${(intelligence.tickRange.tokenProfile.confidence * 100).toFixed(0)}%)`,
+          `Tail multiplier ${intelligence.tickRange.tokenProfile.tailMultiplier.toFixed(2)}x`,
         ],
         variant: "tick-range-prophet",
         executionHints: {
@@ -382,6 +384,39 @@ function buildSignalsForPool(
           maxDelayMs: 1_000,
           priorityProtection: "MAX",
           tickRange: intelligence.tickRange,
+        },
+      }),
+    );
+  }
+
+  if (intelligence.feeVelocity.eligible) {
+    const feeMomentumAction: TradeAction =
+      intelligence.feeVelocity.tvlHealth < 0.92 || intelligence.feeVelocity.quality < 0.62 ? "REBALANCE" : "ADD_LIQUIDITY";
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "FEE_MOMENTUM",
+        action: feeMomentumAction,
+        confidence: clamp01(0.66 + Math.min(0.28, intelligence.feeVelocity.confidence * 0.35)),
+        severity: Math.min(93, Math.round(70 + Math.min(18, intelligence.feeVelocity.acceleration * 3) + Math.min(8, intelligence.feeVelocity.feeEfficiency * 1000))),
+        capitalScale: feeMomentumAction === "REBALANCE" ? 0.14 : 0.18,
+        slippageBps: recommendDynamicSlippageBps(pool, feeMomentumAction, 40, pool.tvlUsd * 0.14, 130),
+        priorityFeeMicroLamports: 1_950,
+        reasons: [
+          `Acceleration ${intelligence.feeVelocity.acceleration.toFixed(2)}x`,
+          `Directional quality ${(intelligence.feeVelocity.quality * 100).toFixed(0)}%`,
+          `Fee efficiency ${(intelligence.feeVelocity.feeEfficiency * 100).toFixed(3)}%`,
+          `TVL health ${(intelligence.feeVelocity.tvlHealth * 100).toFixed(0)}%`,
+          `5m volume ${intelligence.feeVelocity.volume5mUsd.toFixed(0)} USD`,
+        ],
+        variant: "fee-velocity",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: intelligence.feeVelocity.tvlHealth < 0.95 ? 1_000 : 500,
+          priorityProtection: intelligence.feeVelocity.tvlHealth < 0.95 ? "MAX" : "HIGH",
         },
       }),
     );
@@ -411,6 +446,37 @@ function buildSignalsForPool(
           minDelayMs: 0,
           maxDelayMs: 250,
           priorityProtection: "MAX",
+        },
+      }),
+    );
+  }
+
+  if (intelligence.liquidityVacuum.exitEligible) {
+    signals.push(
+      createSignal({
+        createdAt,
+        pool,
+        profile,
+        type: "RISK_EXIT",
+        action: "REMOVE_LIQUIDITY",
+        confidence: clamp01(0.74 + Math.min(0.18, intelligence.liquidityVacuum.priceAdjustedDrawdownPct / 200)),
+        severity: Math.min(98, Math.round(84 + intelligence.liquidityVacuum.priceAdjustedDrawdownPct * 0.2)),
+        capitalScale: 0.12,
+        slippageBps: recommendDynamicSlippageBps(pool, "REMOVE_LIQUIDITY", 35, pool.tvlUsd * 0.1, 140),
+        priorityFeeMicroLamports: 2_700,
+        reasons: [
+          `Price-adjusted drawdown ${intelligence.liquidityVacuum.priceAdjustedDrawdownPct.toFixed(1)}%`,
+          `Volume retention ${intelligence.liquidityVacuum.volumeRetentionPct.toFixed(1)}%`,
+          `Fee-rate expansion ${intelligence.liquidityVacuum.feeRateExpansionPct.toFixed(1)}%`,
+          "Liquidity drain risk detected",
+        ],
+        variant: "liquidity-drain-exit",
+        executionHints: {
+          splitCount,
+          minDelayMs: 0,
+          maxDelayMs: 250,
+          priorityProtection: "MAX",
+          hedgeTo: "USDC",
         },
       }),
     );

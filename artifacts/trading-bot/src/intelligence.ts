@@ -26,6 +26,27 @@ export type TickRangeForecast = {
   predictedMoveBps: number;
   sampleCount: number;
   regressionR2: number;
+  tokenProfile: {
+    category: "memecoin" | "stable" | "bluechip" | "unknown";
+    confidence: number;
+    downsideMultiplier: number;
+    upsideMultiplier: number;
+    tailMultiplier: number;
+  };
+};
+
+export type FeeVelocityEvidence = {
+  eligible: boolean;
+  acceleration: number;
+  quality: number;
+  feeEfficiency: number;
+  tvlHealth: number;
+  volume5mUsd: number;
+  volume1hUsd: number;
+  feeCollected5mUsd: number;
+  directionBias: number;
+  sampleCount: number;
+  confidence: number;
 };
 
 export type LiquidityVacuumEvidence = {
@@ -33,6 +54,8 @@ export type LiquidityVacuumEvidence = {
   tvlDrawdownPct: number;
   volumeRetentionPct: number;
   feeRateExpansionPct: number;
+  priceAdjustedDrawdownPct: number;
+  exitEligible: boolean;
   windowSize: number;
 };
 
@@ -83,6 +106,7 @@ export type PhantomLiquidityEvidence = {
 
 export type PoolIntelligence = {
   tickRange: TickRangeForecast | null;
+  feeVelocity: FeeVelocityEvidence;
   liquidityVacuum: LiquidityVacuumEvidence;
   walletFingerprint: WalletFingerprintEvidence;
   feeCompounding: FeeCompoundingEvidence;
@@ -103,7 +127,8 @@ export function analyzePoolIntelligence(params: {
 }): PoolIntelligence {
   const { pool, previous, previousCapturedAt, universe, history = [], context, capturedAt } = params;
   const poolHistory = collectPoolHistory(pool.address, history, pool, previous, capturedAt, previousCapturedAt);
-  const tickRange = buildTickRangeForecast(pool, poolHistory, context);
+  const feeVelocity = buildFeeVelocityEvidence(pool, poolHistory);
+  const tickRange = buildTickRangeForecast(pool, poolHistory, context, feeVelocity);
   const liquidityVacuum = buildLiquidityVacuum(pool, previous, poolHistory);
   const walletFingerprint = buildWalletFingerprint(pool, context);
   const feeCompounding = buildFeeCompounding(pool);
@@ -114,6 +139,7 @@ export function analyzePoolIntelligence(params: {
 
   return {
     tickRange,
+    feeVelocity,
     liquidityVacuum,
     walletFingerprint,
     feeCompounding,
@@ -128,50 +154,127 @@ function buildTickRangeForecast(
   pool: PoolSnapshot,
   poolHistory: Array<{ capturedAt: string; pool: PoolSnapshot }>,
   context: PoolIntelligenceContext,
+  feeVelocity: FeeVelocityEvidence,
 ): TickRangeForecast | null {
-  const points = poolHistory
-    .map((entry) => ({
-      time: new Date(entry.capturedAt).getTime(),
-      price: entry.pool.currentPrice,
-      binId: entry.pool.activeBinId,
-    }))
-    .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price) && point.price > 0);
+  const points = dedupeTrendPoints(
+    poolHistory
+      .map((entry) => ({
+        time: new Date(entry.capturedAt).getTime(),
+        price: entry.pool.currentPrice,
+        binId: entry.pool.activeBinId,
+      }))
+      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.price) && point.price > 0),
+  );
 
   if (points.length < 3) return null;
 
-  const fit = linearRegression(points.map((point) => point.time), points.map((point) => point.price));
-  if (!fit) return null;
+  const priceFit = linearRegression(points.map((point) => point.time), points.map((point) => point.price));
+  const binFit = linearRegression(points.map((point) => point.time), points.map((point) => point.binId));
+  if (!priceFit && !binFit) return null;
   const firstPoint = points[0]!;
   const lastPoint = points[points.length - 1]!;
   const priceSpanPct = firstPoint.price > 0 ? Math.abs((lastPoint.price - firstPoint.price) / firstPoint.price) : 0;
   const trendDirection = Math.sign(lastPoint.price - firstPoint.price);
-  const directionSupport =
-    points.slice(1).reduce((support, point, index) => {
-      const delta = point.price - points[index]!.price;
-      if (delta === 0) return support;
-      return support + (Math.sign(delta) === trendDirection ? 1 : 0);
-    }, 0) / Math.max(1, points.length - 1);
+  const priceDirectionSupport = computeDirectionSupport(points.map((point) => point.price), trendDirection);
+  const binDirectionSupport = computeDirectionSupport(points.map((point) => point.binId), Math.sign(lastPoint.binId - firstPoint.binId));
+  const directionSupport = clamp((priceDirectionSupport + binDirectionSupport) / 2, 0, 1);
   const strongTrend = points.length >= 4 && priceSpanPct >= 0.08 && directionSupport >= 0.6;
-  if (fit.r2 < 0.55 && !strongTrend) return null;
+  const priceR2 = priceFit?.r2 ?? 0;
+  const binR2 = binFit?.r2 ?? 0;
+  if (Math.max(priceR2, binR2) < 0.45 && !strongTrend) return null;
 
-  const horizonMinutes = context.eventWindowActive ? 5 : fit.slope > 0 ? 15 : 30;
+  const horizonMinutes = context.eventWindowActive || feeVelocity.acceleration >= 2.5 ? 5 : (priceFit?.slope ?? 0) > 0 || (binFit?.slope ?? 0) > 0 ? 15 : 30;
   const horizonMs = horizonMinutes * 60_000;
-  const forecastPrice = Math.max(0, fit.intercept + fit.slope * (lastPoint.time + horizonMs));
+  const priceSlope = priceFit?.slope ?? 0;
+  const priceIntercept = priceFit?.intercept ?? lastPoint.price;
+  const binSlope = binFit?.slope ?? 0;
+  const binIntercept = binFit?.intercept ?? lastPoint.binId;
+  const forecastPrice = Math.max(0, priceIntercept + priceSlope * (lastPoint.time + horizonMs));
   const predictedMoveBps = pool.currentPrice > 0 ? round2(((forecastPrice - pool.currentPrice) / pool.currentPrice) * 10_000) : 0;
   const centerShift = Math.round(predictedMoveBps / Math.max(1, pool.binStep * 4));
-  const residualStd = fit.residualStdDev;
-  const bandWidth = Math.max(2, Math.round(Math.max(1, residualStd / Math.max(pool.currentPrice, 0.000001)) * 10_000 / Math.max(1, pool.binStep * 4)));
-  const centerBinId = pool.activeBinId + centerShift;
+  const forecastBinFromTrend = Math.round(binIntercept + binSlope * (lastPoint.time + horizonMs));
+  const priceBandWidth = Math.max(2, Math.round(Math.max(1, (priceFit?.residualStdDev ?? 0) / Math.max(pool.currentPrice, 0.000001)) * 10_000 / Math.max(1, pool.binStep * 4)));
+  const binBandWidth = Math.max(2, Math.round(Math.max(1, binFit ? binFit.residualStdDev : 0) * 0.65));
+  const volatilityBandWidth = Math.max(2, Math.round(averageAbsDelta(points.map((point) => point.binId)) * 1.4 + averageFlipPenalty(points.map((point) => point.binId)) * 3));
+  const tokenProfile = classifyTokenProfile(pool);
+  const tailMultiplier = Math.max(1.1, 1 + (1 - clamp((priceR2 + binR2) / 2, 0, 1)) * 1.25 + (1 - tokenProfile.confidence) * 0.35);
+  const baseBandWidth = Math.max(priceBandWidth, binBandWidth, volatilityBandWidth, 2);
+  const lowerBandWidth = Math.max(2, Math.round(baseBandWidth * tokenProfile.downsideMultiplier * tailMultiplier));
+  const upperBandWidth = Math.max(2, Math.round(baseBandWidth * tokenProfile.upsideMultiplier * tailMultiplier));
+  const confidence = clamp(
+    ((priceR2 + binR2) / 2) * 0.5 +
+      directionSupport * 0.25 +
+      Math.min(1, points.length / 6) * 0.1 +
+      feeVelocity.quality * 0.15,
+    0.18,
+    0.98,
+  );
+  const blendedCenter = Math.round((pool.activeBinId + centerShift + forecastBinFromTrend) / 3);
 
   return {
-    lowerBinId: Math.max(0, centerBinId - bandWidth),
-    upperBinId: Math.max(centerBinId + 1, centerBinId + bandWidth),
-    centerBinId,
+    lowerBinId: Math.max(0, blendedCenter - lowerBandWidth),
+    upperBinId: Math.max(blendedCenter + 1, blendedCenter + upperBandWidth),
+    centerBinId: blendedCenter,
     horizonMinutes,
-    confidence: clamp(Math.max(fit.r2, priceSpanPct * directionSupport) * Math.min(1, points.length / 5), 0.2, 0.98),
+    confidence,
     predictedMoveBps,
     sampleCount: points.length,
-    regressionR2: round2(fit.r2),
+    regressionR2: round2(Math.max(priceR2, binR2)),
+    tokenProfile,
+  };
+}
+
+function buildFeeVelocityEvidence(
+  pool: PoolSnapshot,
+  poolHistory: Array<{ capturedAt: string; pool: PoolSnapshot }>,
+): FeeVelocityEvidence {
+  const points = poolHistory
+    .map((entry) => ({
+      time: new Date(entry.capturedAt).getTime(),
+      pool: entry.pool,
+    }))
+    .filter((entry) => Number.isFinite(entry.time))
+    .sort((a, b) => a.time - b.time);
+
+  const current = points[points.length - 1]?.pool ?? pool;
+  const nowTime = points[points.length - 1]?.time ?? new Date().getTime();
+  const fiveMinutesAgo = samplePointAtOrBefore(points, nowTime - 5 * 60_000) ?? points[0]?.pool ?? pool;
+  const oneHourAgo = samplePointAtOrBefore(points, nowTime - 60 * 60_000) ?? points[0]?.pool ?? pool;
+
+  const volume5mUsd = Math.max(0, current.volume24hUsd - fiveMinutesAgo.volume24hUsd);
+  const volume1hUsd = Math.max(0, current.volume24hUsd - oneHourAgo.volume24hUsd);
+  const feeCollected5mUsd = Math.max(0, current.fee24hUsd - fiveMinutesAgo.fee24hUsd);
+  const avg5mFrom1h = volume1hUsd > 0 ? volume1hUsd / 12 : 0;
+  const acceleration = avg5mFrom1h > 0 ? volume5mUsd / avg5mFrom1h : volume5mUsd > 0 ? 999 : 0;
+  const priceTrend = safeTrend(current.currentPrice, fiveMinutesAgo.currentPrice);
+  const binTrend = safeTrend(current.activeBinId, fiveMinutesAgo.activeBinId);
+  const oscillationPenalty = clamp(countDirectionFlips(points.map((entry) => entry.pool.currentPrice)) / Math.max(1, points.length - 2), 0, 1);
+  const directionBias = clamp(0.5 + priceTrend * 0.55 + binTrend * 0.35 - oscillationPenalty * 0.15, 0, 1);
+  const tvlHealth = fiveMinutesAgo.tvlUsd > 0 ? clamp(current.tvlUsd / fiveMinutesAgo.tvlUsd, 0, 3) : 1;
+  const feeEfficiency = current.tvlUsd > 0 ? feeCollected5mUsd / current.tvlUsd : 0;
+  const sampleCount = points.filter((entry) => entry.time >= nowTime - 60 * 60_000).length;
+  const confidence = clamp(
+    Math.min(1, sampleCount / 8) * 0.45 +
+      Math.min(1, acceleration / 4) * 0.2 +
+      directionBias * 0.2 +
+      Math.min(1, feeEfficiency / 0.001) * 0.15,
+    0.15,
+    0.98,
+  );
+  const eligible = acceleration > 1.5 && directionBias > 0.55 && feeEfficiency >= 0.0005 && tvlHealth > 0.85;
+
+  return {
+    eligible,
+    acceleration: round2(acceleration),
+    quality: round2(directionBias),
+    feeEfficiency: round2(feeEfficiency),
+    tvlHealth: round2(tvlHealth),
+    volume5mUsd: round2(volume5mUsd),
+    volume1hUsd: round2(volume1hUsd),
+    feeCollected5mUsd: round2(feeCollected5mUsd),
+    directionBias: round2(directionBias),
+    sampleCount,
+    confidence: round2(confidence),
   };
 }
 
@@ -187,18 +290,19 @@ function buildLiquidityVacuum(
   const tvlDrawdownPct = baselineTvl > 0 ? clamp(((baselineTvl - pool.tvlUsd) / baselineTvl) * 100, 0, 100) : 0;
   const volumeRetentionPct = baselineVolume > 0 ? clamp((pool.volume24hUsd / baselineVolume) * 100, 0, 100) : 0;
   const feeRateExpansionPct = baselineFeeRate > 0 ? clamp(((pool.feeRatePct - baselineFeeRate) / baselineFeeRate) * 100, -100, 10_000) : 0;
-  const eligible = Boolean(
-    previous &&
-      tvlDrawdownPct >= 20 &&
-      volumeRetentionPct >= 90 &&
-      feeRateExpansionPct >= 15,
-  );
+  const priceHistory = window.map((item) => item.currentPrice).filter((value) => Number.isFinite(value) && value > 0);
+  const priceChangePct = priceHistory.length >= 2 ? ((priceHistory.at(-1)! - priceHistory[0]!) / priceHistory[0]!) * 100 : 0;
+  const priceAdjustedDrawdownPct = clamp(Math.max(0, tvlDrawdownPct - Math.abs(priceChangePct) * 0.65), 0, 100);
+  const eligible = Boolean(previous && priceAdjustedDrawdownPct >= 20 && volumeRetentionPct >= 90 && feeRateExpansionPct >= 15);
+  const exitEligible = Boolean(previous && priceAdjustedDrawdownPct >= 30 && (volumeRetentionPct < 80 || feeRateExpansionPct < -10));
 
   return {
     eligible,
     tvlDrawdownPct: round2(tvlDrawdownPct),
     volumeRetentionPct: round2(volumeRetentionPct),
     feeRateExpansionPct: round2(feeRateExpansionPct),
+    priceAdjustedDrawdownPct: round2(priceAdjustedDrawdownPct),
+    exitEligible,
     windowSize: window.length,
   };
 }
@@ -415,6 +519,154 @@ function estimatePoolAgeHours(createdAt?: string) {
   const time = new Date(createdAt).getTime();
   if (!Number.isFinite(time)) return 0;
   return Math.max(0, (Date.now() - time) / 3_600_000);
+}
+
+function estimateFdvUsd(pool: PoolSnapshot) {
+  const baseline = pool.tvlUsd > 0 ? pool.tvlUsd * 8 : 100_000;
+  const activityPremium = pool.volume24hUsd > 0 ? Math.min(pool.volume24hUsd * 2, baseline * 0.8) : 0;
+  return round2(Math.max(10_000, baseline + activityPremium));
+}
+
+function classifyTokenProfile(pool: PoolSnapshot) {
+  const ageHours = estimatePoolAgeHours(pool.createdAt);
+  const holderCount = Array.isArray(pool.topHolderWallets) ? pool.topHolderWallets.length : 0;
+  const concentration = Math.max(pool.topHolderSharePct ?? 0, pool.topTenHolderSharePct ?? 0);
+  const fdvUsd = pool.fdvUsd ?? estimateFdvUsd(pool);
+  const liquidityToFdv = fdvUsd > 0 ? pool.tvlUsd / fdvUsd : 0;
+  const authorityRisk =
+    (pool.mintAuthorityRevoked === false ? 1 : 0) +
+    (pool.freezeAuthorityRevoked === false ? 1 : 0) +
+    (pool.liquidityLocked === false ? 1 : 0);
+
+  let score = 0;
+  if (ageHours < 168) score += 2;
+  if (holderCount > 0 && holderCount < 1000) score += 2;
+  if (concentration >= 30) score += 2;
+  if (liquidityToFdv < 0.1) score += 1;
+  if (authorityRisk > 0) score += 1;
+
+  if (score >= 5) {
+    return {
+      category: "memecoin" as const,
+      confidence: clamp(score / 8, 0, 1),
+      downsideMultiplier: 1.65,
+      upsideMultiplier: 0.75,
+      tailMultiplier: 1.45,
+    };
+  }
+
+  if (ageHours >= 8_760 && holderCount >= 10_000 && concentration < 15) {
+    return {
+      category: "bluechip" as const,
+      confidence: 0.82,
+      downsideMultiplier: 1,
+      upsideMultiplier: 1,
+      tailMultiplier: 1.1,
+    };
+  }
+
+  if (pool.tokenY === "USDC" || pool.tokenY === "USDT" || pool.tokenY === "USD") {
+    return {
+      category: "stable" as const,
+      confidence: 0.7,
+      downsideMultiplier: 0.9,
+      upsideMultiplier: 0.9,
+      tailMultiplier: 1.05,
+    };
+  }
+
+  return {
+    category: "unknown" as const,
+    confidence: 0.38,
+    downsideMultiplier: 1.2,
+    upsideMultiplier: 1.05,
+    tailMultiplier: 1.25,
+  };
+}
+
+function dedupeTrendPoints(points: Array<{ time: number; price: number; binId: number }>) {
+  const ordered = points.slice().sort((a, b) => a.time - b.time);
+  const deduped: Array<{ time: number; price: number; binId: number }> = [];
+
+  for (const point of ordered) {
+    const prev = deduped[deduped.length - 1];
+    if (!prev) {
+      deduped.push(point);
+      continue;
+    }
+
+    const samePrice = Math.abs(prev.price - point.price) <= Math.max(0.000001, prev.price * 0.0005);
+    const sameBin = prev.binId === point.binId;
+    const sameTime = prev.time === point.time;
+    if (sameTime || (samePrice && sameBin)) continue;
+    deduped.push(point);
+  }
+
+  return deduped;
+}
+
+function computeDirectionSupport(values: number[], trendDirection: number) {
+  if (values.length < 2) return 0.5;
+  let support = 0;
+  let counted = 0;
+  for (let index = 1; index < values.length; index += 1) {
+    const delta = values[index]! - values[index - 1]!;
+    if (delta === 0) continue;
+    counted += 1;
+    if (trendDirection === 0) {
+      support += 0.5;
+    } else if (Math.sign(delta) === trendDirection) {
+      support += 1;
+    }
+  }
+  return counted > 0 ? support / counted : 0.5;
+}
+
+function countDirectionFlips(values: number[]) {
+  if (values.length < 3) return 0;
+  let flips = 0;
+  let lastDirection = 0;
+  for (let index = 1; index < values.length; index += 1) {
+    const delta = values[index]! - values[index - 1]!;
+    if (delta === 0) continue;
+    const direction = Math.sign(delta);
+    if (lastDirection !== 0 && direction !== lastDirection) flips += 1;
+    lastDirection = direction;
+  }
+  return flips;
+}
+
+function averageAbsDelta(values: number[]) {
+  if (values.length < 2) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let index = 1; index < values.length; index += 1) {
+    sum += Math.abs(values[index]! - values[index - 1]!);
+    count += 1;
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+function averageFlipPenalty(values: number[]) {
+  const flips = countDirectionFlips(values);
+  return values.length > 2 ? flips / (values.length - 2) : 0;
+}
+
+function safeTrend(current: number, previous: number) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return 0;
+  return clamp((current - previous) / Math.abs(previous), -2, 2);
+}
+
+function samplePointAtOrBefore(points: Array<{ time: number; pool: PoolSnapshot }>, targetTime: number) {
+  let candidate: PoolSnapshot | undefined;
+  for (const point of points) {
+    if (point.time <= targetTime) {
+      candidate = point.pool;
+      continue;
+    }
+    break;
+  }
+  return candidate;
 }
 
 function intersectionSize(a: Set<string>, b: Set<string>) {

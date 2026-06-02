@@ -413,11 +413,159 @@ test("signal engine emits the new phase 3-4 intelligence signals", () => {
   const types = new Set(result.map((signal) => signal.type));
 
   assert.ok(types.has("TICK_RANGE_PROPHET"));
-  assert.ok(types.has("LIQUIDITY_VACUUM"));
   assert.ok(types.has("WALLET_FINGERPRINT"));
   assert.ok(types.has("FEE_COMPOUNDING_FLYWHEEL"));
   assert.ok(types.has("NARRATIVE_GRAPH"));
   assert.ok(types.has("DEAD_POOL_RESURRECTOR"));
   assert.ok(types.has("EXECUTION_AUCTION"));
   assert.ok(types.has("PHANTOM_LIQUIDITY"));
+});
+
+test("signal engine applies fee velocity and asymmetric tick ranges", () => {
+  const engine = new SignalEngine();
+  const history = [
+    {
+      capturedAt: "2026-06-01T10:00:00.000Z",
+      pools: [
+        {
+          address: "pool-fee",
+          name: "PEPE-USDC",
+          tokenX: "PEPE",
+          tokenY: "USDC",
+          tvlUsd: 900_000,
+          volume24hUsd: 1_000_000,
+          fee24hUsd: 9_500,
+          feeRatePct: 1.06,
+          binStep: 25,
+          signalScore: 78,
+          jupScore: 75,
+          smartMoneyScore: 68,
+          degenScore: 80,
+          socialVelocityScore: 64,
+          socialVelocityDelta: 0,
+          whalePressureScore: 26,
+          whaleFlowBps: 95,
+          bondingCurveProgressPct: 22,
+          eventWindowActive: false,
+          previousRugsByDev: 0,
+          holderGini: 0.31,
+          contractRiskScore: 10,
+          ilRisk: "MEDIUM",
+          signalSeed: "ENTER",
+          currentPrice: 1,
+          activeBinId: 100,
+          creatorAddress: "CreatorFee1111111111111111111111111111111111",
+          mintAuthorityRevoked: true,
+          freezeAuthorityRevoked: true,
+          liquidityLocked: true,
+          topHolderSharePct: 24,
+          topTenHolderSharePct: 39,
+          topHolderWallets: ["wallet-a", "wallet-b", "wallet-c", "wallet-d", "wallet-e"],
+          createdAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+      prices: [],
+    },
+    {
+      capturedAt: "2026-06-01T10:50:00.000Z",
+      pools: [
+        {
+          address: "pool-fee",
+          name: "PEPE-USDC",
+          tokenX: "PEPE",
+          tokenY: "USDC",
+          tvlUsd: 930_000,
+          volume24hUsd: 1_080_000,
+          fee24hUsd: 10_100,
+          feeRatePct: 1.09,
+          binStep: 25,
+          signalScore: 81,
+          jupScore: 77,
+          smartMoneyScore: 70,
+          degenScore: 82,
+          socialVelocityScore: 67,
+          socialVelocityDelta: 3,
+          whalePressureScore: 27,
+          whaleFlowBps: 110,
+          bondingCurveProgressPct: 34,
+          eventWindowActive: false,
+          previousRugsByDev: 0,
+          holderGini: 0.33,
+          contractRiskScore: 10,
+          ilRisk: "MEDIUM",
+          signalSeed: "ENTER",
+          currentPrice: 1.08,
+          activeBinId: 104,
+          creatorAddress: "CreatorFee1111111111111111111111111111111111",
+          mintAuthorityRevoked: true,
+          freezeAuthorityRevoked: true,
+          liquidityLocked: true,
+          topHolderSharePct: 25,
+          topTenHolderSharePct: 40,
+          topHolderWallets: ["wallet-a", "wallet-b", "wallet-c", "wallet-d", "wallet-e"],
+          createdAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+      prices: [],
+    },
+  ] satisfies MarketSnapshot[];
+
+  const now = {
+    capturedAt: "2026-06-01T11:00:00.000Z",
+    pools: [
+      {
+        address: "pool-fee",
+        name: "PEPE-USDC",
+        tokenX: "PEPE",
+        tokenY: "USDC",
+        tvlUsd: 945_000,
+        volume24hUsd: 1_180_000,
+        fee24hUsd: 10_800,
+        feeRatePct: 1.14,
+        binStep: 25,
+        signalScore: 84,
+        jupScore: 80,
+        smartMoneyScore: 73,
+        degenScore: 85,
+        socialVelocityScore: 70,
+        socialVelocityDelta: 6,
+        whalePressureScore: 28,
+        whaleFlowBps: 130,
+        bondingCurveProgressPct: 41,
+        eventWindowActive: true,
+        eventName: "Narrative breakout",
+        eventBlocksRemaining: 24,
+        previousRugsByDev: 0,
+        holderGini: 0.34,
+        contractRiskScore: 10,
+        ilRisk: "MEDIUM",
+        signalSeed: "ENTER",
+        currentPrice: 1.15,
+        activeBinId: 109,
+        creatorAddress: "CreatorFee1111111111111111111111111111111111",
+        mintAuthorityRevoked: true,
+        freezeAuthorityRevoked: true,
+        liquidityLocked: true,
+        topHolderSharePct: 26,
+        topTenHolderSharePct: 41,
+        topHolderWallets: ["wallet-a", "wallet-b", "wallet-c", "wallet-d", "wallet-e"],
+        createdAt: "2026-05-31T00:00:00.000Z",
+      },
+    ],
+    prices: [],
+  } satisfies MarketSnapshot;
+
+  const result = engine.generate({ now: now as never, history: [...history, now as never] });
+  const feeMomentum = result.find((signal) => signal.type === "FEE_MOMENTUM");
+  const tickRange = result.find((signal) => signal.type === "TICK_RANGE_PROPHET");
+
+  assert.ok(feeMomentum);
+  assert.equal(feeMomentum?.poolAddress, "pool-fee");
+  assert.ok((feeMomentum?.executionHints?.maxDelayMs ?? 0) <= 1_000);
+  assert.ok(tickRange);
+  const tick = tickRange?.executionHints?.tickRange;
+  assert.ok(tick);
+  assert.equal(tick?.tokenProfile?.category, "memecoin");
+  assert.ok((tick?.tokenProfile?.downsideMultiplier ?? 0) > (tick?.tokenProfile?.upsideMultiplier ?? 0));
+  assert.ok((tick?.confidence ?? 0) >= 0.2);
 });

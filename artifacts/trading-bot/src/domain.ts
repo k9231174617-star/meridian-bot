@@ -150,6 +150,13 @@ export type Signal = {
       horizonMinutes: number;
       confidence: number;
       predictedMoveBps: number;
+      tokenProfile?: {
+        category: "memecoin" | "stable" | "bluechip" | "unknown";
+        confidence: number;
+        downsideMultiplier: number;
+        upsideMultiplier: number;
+        tailMultiplier: number;
+      };
     };
     relatedPools?: string[];
     compoundingRatio?: number;
