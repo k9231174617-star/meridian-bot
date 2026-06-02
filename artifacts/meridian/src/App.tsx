@@ -1295,12 +1295,13 @@ function App() {
     name: WalletOptionName;
     subtitle: string;
     icon: string;
+    accent: string;
     recommended?: boolean;
   }> = [
-    { name: "Phantom", subtitle: "Most popular Solana wallet", icon: "👻", recommended: true },
-    { name: "Solflare", subtitle: "Native Solana wallet", icon: "☀️" },
-    { name: "Backpack", subtitle: "xNFT wallet by Coral", icon: "🎒" },
-    { name: "OKX Wallet", subtitle: "Multi-chain wallet", icon: "⭕" },
+    { name: "Phantom", subtitle: "Most popular Solana wallet", icon: "P", accent: "var(--neon-cyan)", recommended: true },
+    { name: "Solflare", subtitle: "Native Solana wallet", icon: "S", accent: "var(--neon-yellow)" },
+    { name: "Backpack", subtitle: "xNFT wallet by Coral", icon: "B", accent: "var(--neon-orange)" },
+    { name: "OKX Wallet", subtitle: "Multi-chain wallet", icon: "OK", accent: "var(--neon-red)" },
   ];
   const paperSessionSummary = paperTradeStatus?.status === "running"
     ? `PID ${paperTradeStatus.pid ?? "?"} · cycles ${paperTradeStatus.request?.cycles ?? paperTradeCycles}`
@@ -2495,8 +2496,11 @@ function App() {
                 key={option.name}
                 type="button"
                 onClick={() => void connectWalletProvider(option.name)}
+                style={{ ["--wallet-accent" as string]: option.accent }}
               >
-                <div className="wo-icon">{option.icon}</div>
+                <div className="wo-icon" aria-hidden="true">
+                  <span className="wo-glyph">{option.icon}</span>
+                </div>
                 <div>
                   <div className="wo-name">{option.name}</div>
                   <div className="wo-sub">{option.subtitle}</div>
