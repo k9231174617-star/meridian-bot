@@ -1126,15 +1126,19 @@ function App() {
     }
   }
 
-  function openWalletWebsite(providerName: WalletOptionName) {
+  function openWalletApp(providerName: WalletOptionName) {
+    const currentUrl = encodeURIComponent(window.location.href);
+    const ref = encodeURIComponent(window.location.origin);
+    const okxDeepLink = `okx://wallet/dapp/url?dappUrl=${currentUrl}`;
+
     const urlByWallet: Record<WalletOptionName, string> = {
-      Phantom: "https://phantom.app/",
-      Solflare: "https://solflare.com/",
-      Backpack: "https://backpack.app/",
-      "OKX Wallet": "https://www.okx.com/web3",
+      Phantom: `https://phantom.app/ul/browse/${currentUrl}?ref=${ref}`,
+      Solflare: `https://solflare.com/ul/v1/browse/${currentUrl}?ref=${ref}`,
+      Backpack: `https://backpack.app/ul/v1/browse/${currentUrl}?ref=${ref}`,
+      "OKX Wallet": okxDeepLink,
     };
 
-    window.open(urlByWallet[providerName], "_blank", "noopener,noreferrer");
+    window.location.href = urlByWallet[providerName];
   }
 
   async function connectWalletProvider(providerName: WalletOptionName) {
@@ -1148,7 +1152,7 @@ function App() {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (/not ready|not detected|not installed/i.test(message)) {
-            openWalletWebsite(providerName);
+            openWalletApp(providerName);
             toastMessage(`Opening ${providerName}`);
             return;
           }
@@ -1157,14 +1161,14 @@ function App() {
         }
       }
 
-      openWalletWebsite(providerName);
+      openWalletApp(providerName);
       toastMessage(`Opening ${providerName}`);
       return;
     }
 
     const provider = resolveInjectedWalletProvider(providerName);
     if (!provider?.connect) {
-      openWalletWebsite(providerName);
+      openWalletApp(providerName);
       toastMessage(`Opening ${providerName}`);
       return;
     }
@@ -1184,7 +1188,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/not ready|not detected|not installed/i.test(message)) {
-        openWalletWebsite(providerName);
+        openWalletApp(providerName);
         toastMessage(`Opening ${providerName}`);
         return;
       }
