@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 type RunRecord =
   | { kind: "run_start"; runId: number; startedAt: string; config: Record<string, unknown> }
@@ -39,8 +40,8 @@ export type BotStatusResponse = {
 };
 
 export async function loadBotStatus(storageDir = resolveStorageDir()) : Promise<BotStatusResponse> {
-  const runs = await readRecords<RunRecord>("runs.jsonl", storageDir);
-  const alerts = await readRecords<AlertRecord>("alerts.jsonl", storageDir);
+  const runs = await readAllRecords<RunRecord>("runs.jsonl", storageDir);
+  const alerts = await readAllRecords<AlertRecord>("alerts.jsonl", storageDir);
   const starts = runs.filter((record): record is Extract<RunRecord, { kind: "run_start" }> => record.kind === "run_start");
   const finishes = runs.filter((record): record is Extract<RunRecord, { kind: "run_finish" }> => record.kind === "run_finish");
   const lastStart = starts.at(-1);
@@ -73,7 +74,28 @@ export async function loadBotStatus(storageDir = resolveStorageDir()) : Promise<
 }
 
 export function resolveStorageDir() {
-  return path.resolve(process.env.BOT_STORAGE_DIR ?? ".bot-data/trading-bot");
+  return resolveStorageDirs()[0];
+}
+
+export function resolveStorageDirs() {
+  const candidates = [
+    process.env.BOT_STORAGE_DIR,
+    path.resolve(process.cwd(), ".bot-data", "trading-bot"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".bot-data", "trading-bot"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".bot-data", "trading-bot"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", ".bot-data", "trading-bot"),
+  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
+
+  return [...new Set(candidates.map((candidate) => path.resolve(candidate)))];
+}
+
+async function readAllRecords<T>(filename: string, storageDir: string): Promise<T[]> {
+  const dirs = storageDir ? [storageDir, ...resolveStorageDirs().filter((candidate) => candidate !== path.resolve(storageDir))] : resolveStorageDirs();
+  const records: T[] = [];
+  for (const dir of dirs) {
+    records.push(...await readRecords<T>(filename, dir));
+  }
+  return records;
 }
 
 async function readRecords<T>(filename: string, storageDir: string): Promise<T[]> {

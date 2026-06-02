@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveStorageDir } from "./bot-status.js";
 
 export type RecentSignalRecord = {
@@ -63,6 +64,14 @@ export async function loadRecentSignals(storageDir = resolveStorageDir(), limit 
   const signals = records
     .filter((record): record is SignalRecord => record.kind === "signal")
     .map((record) => record.signal)
+    .reduce<RecentSignalRecord[]>((acc, signal) => {
+      const existingIndex = acc.findIndex((entry) => entry.id === signal.id);
+      if (existingIndex >= 0) {
+        acc.splice(existingIndex, 1);
+      }
+      acc.push(signal);
+      return acc;
+    }, [])
     .slice(-Math.max(1, limit))
     .reverse();
 
@@ -80,20 +89,36 @@ export async function loadRecentSignals(storageDir = resolveStorageDir(), limit 
 }
 
 async function readSignalRecords(storageDir: string) {
-  try {
-    const raw = await readFile(path.join(storageDir, "signals.jsonl"), "utf8");
-    return raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .flatMap((line) => {
-        try {
-          return [JSON.parse(line) as SignalRecord];
-        } catch {
-          return [];
-        }
-      });
-  } catch {
-    return [];
+  const dirs = [storageDir, ...resolveCandidateDirs().filter((candidate) => candidate !== path.resolve(storageDir))];
+  const records: SignalRecord[] = [];
+  for (const dir of dirs) {
+    try {
+      const raw = await readFile(path.join(dir, "signals.jsonl"), "utf8");
+      records.push(
+        ...raw
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line) as SignalRecord];
+            } catch {
+              return [];
+            }
+          }),
+      );
+    } catch {
+      continue;
+    }
   }
+  return records;
+}
+
+function resolveCandidateDirs() {
+  return [resolveStorageDir()]
+    .concat([
+      path.resolve(process.cwd(), ".bot-data", "trading-bot"),
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".bot-data", "trading-bot"),
+    ])
+    .map((candidate) => path.resolve(candidate));
 }
