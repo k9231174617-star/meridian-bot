@@ -7,12 +7,17 @@ router.get("/status", (_req, res) => {
 });
 
 router.post("/", async (req: Request, res: Response) => {
-  const cycles = toPositiveInteger(req.body?.cycles) ?? 1;
+  const continuous = req.body?.continuous === true;
+  const cycles = continuous ? undefined : (toPositiveInteger(req.body?.cycles) ?? 1);
   const intervalMs = toPositiveInteger(req.body?.intervalMs);
   const debug = normalizeDebug(req.body?.debug);
 
   try {
-    const status = await controller.start({ cycles, intervalMs, ...(debug ? { debug } : {}) });
+    const status = await controller.start({
+      ...(continuous ? { continuous: true } : { cycles: cycles ?? 1 }),
+      ...(intervalMs ? { intervalMs } : {}),
+      ...(debug ? { debug } : {}),
+    });
     res.status(202).json(status);
   } catch (error) {
     if (error instanceof Error && error.name === "PaperTradeAlreadyRunningError") {

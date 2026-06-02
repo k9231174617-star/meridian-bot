@@ -3,8 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type PaperTradeRequest = {
-  cycles: number;
+  cycles?: number;
   intervalMs?: number;
+  continuous?: boolean;
   debug?: {
     forceSignal?: boolean;
     bypassRisk?: boolean;
@@ -57,7 +58,8 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         throw error;
       }
 
-      const cycles = Math.max(1, Math.floor(request.cycles));
+      const continuous = request.continuous === true;
+      const cycles = continuous ? undefined : Math.max(1, Math.floor(request.cycles ?? 1));
       const intervalMs = request.intervalMs ? Math.max(1000, Math.floor(request.intervalMs)) : undefined;
       const debug = normalizeDebugOptions(request.debug);
       const storageDir = path.join(workspaceRoot, ".bot-data", "trading-bot");
@@ -67,9 +69,15 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         "run",
         "paper:trade",
         "--",
-        "--cycles",
-        String(cycles),
       ];
+
+      if (!continuous && typeof cycles === "number") {
+        args.push("--cycles", String(cycles));
+      }
+
+      if (continuous) {
+        args.push("--continuous");
+      }
 
       if (typeof intervalMs === "number") {
         args.push("--intervalMs", String(intervalMs));
@@ -81,7 +89,11 @@ export function createPaperTradeController(options: PaperTradeControllerOptions 
         startedAt,
         pid: undefined,
         command: ["pnpm", ...args],
-        request: { cycles, ...(intervalMs ? { intervalMs } : {}), ...(debug ? { debug } : {}) },
+        request: {
+          ...(continuous ? { continuous: true } : { cycles: cycles ?? 1 }),
+          ...(intervalMs ? { intervalMs } : {}),
+          ...(debug ? { debug } : {}),
+        },
       };
 
       const env = {

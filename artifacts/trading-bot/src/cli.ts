@@ -16,6 +16,7 @@ switch (command) {
     break;
   case "paper-trade":
     await runPaperTrading({
+      continuous: flags.continuous === true,
       maxCycles: numberFlag(flags.cycles),
       intervalMs: numberFlag(flags.intervalMs),
     });

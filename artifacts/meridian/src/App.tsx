@@ -1056,6 +1056,7 @@ function App() {
           accept: "application/json",
         },
         body: JSON.stringify({
+          continuous: true,
           cycles: paperTradeCycles,
           debug: {
             forceSignal: paperTradeDebugForceSignal,
@@ -1775,7 +1776,7 @@ function App() {
                   {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
                     ? "Debug mode active for data collection."
                     : paperTradeRunning
-                      ? "Paper session is collecting data."
+                      ? "Paper session is collecting data continuously."
                       : autoTradingEnabled
                         ? "Live trading ready."
                         : "Live trading disabled."}
@@ -2043,7 +2044,7 @@ function App() {
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      if (pool.signalType === PoolSignalType.ENTER) {
+                      if (pool.signalType === PoolSignalType.ENTER && walletConnected) {
                         handleEnterPool(pool);
                       } else {
                         handlePoolDetail(pool);
@@ -2051,7 +2052,7 @@ function App() {
                       }
                     }}
                   >
-                    {pool.signalType === PoolSignalType.ENTER ? t.enterPool : t.viewDetail}
+                    {pool.signalType === PoolSignalType.ENTER && walletConnected ? t.enterPool : t.viewDetail}
                   </button>
                 </div>
               </button>
@@ -2124,8 +2125,19 @@ function App() {
                   <button className="enter-btn passive" type="button" onClick={() => copyAddress(selectedPool.address)}>
                     {t.copyAddress}
                   </button>
-                  <button className="enter-btn active" type="button" onClick={() => handleEnterPool(selectedPool)}>
-                    {t.enterPool}
+                  <button
+                    className={`enter-btn ${walletConnected ? "active" : "passive"}`}
+                    type="button"
+                    onClick={() => {
+                      if (walletConnected) {
+                        handleEnterPool(selectedPool);
+                      } else {
+                        handlePoolDetail(selectedPool);
+                        toastMessage(t.viewDetail);
+                      }
+                    }}
+                  >
+                    {walletConnected ? t.enterPool : t.viewDetail}
                   </button>
                 </div>
               </div>

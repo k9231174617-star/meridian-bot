@@ -664,9 +664,9 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
   }
 }
 
-export async function runPaperTrading(overrides?: RunBotOverrides) {
+export async function runPaperTrading(overrides?: RunBotOverrides & { continuous?: boolean }) {
   return runBot("paper", {
-    maxCycles: overrides?.maxCycles ?? loadConfig().paperMaxCycles ?? 1,
+    maxCycles: overrides?.continuous ? undefined : overrides?.maxCycles ?? loadConfig().paperMaxCycles ?? 1,
     intervalMs: overrides?.intervalMs,
   });
 }
