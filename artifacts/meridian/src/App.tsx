@@ -17,6 +17,7 @@ import {
 import "./dashboard.css";
 
 const PnLChart = lazy(() => import("./components/pnl-chart").then((module) => ({ default: module.PnLChart })));
+const DEMO_WALLET_ADDRESS = "DeMo111111111111111111111111111111111111111";
 
 type Page = "signals" | "positions" | "analytics" | "wallet" | "settings";
 type Chip = "all" | "hot" | "meteora" | "raydium" | "orca" | "smart" | "organic";
@@ -716,8 +717,7 @@ function App() {
   const [walletConnectReady, setWalletConnectReady] = useState(false);
 
   const t = STRINGS[lang];
-  const walletValid = walletAddress.trim().length >= 32;
-  const canQueryWallet = walletConnected && walletValid;
+  const queryWalletAddress = walletAddress || DEMO_WALLET_ADDRESS;
   const isAndroidDevice = useMemo(() => /android/i.test(navigator.userAgent), []);
   const isIosDevice = useMemo(() => /iphone|ipad|ipod/i.test(navigator.userAgent), []);
   const isMobileDevice = isAndroidDevice || isIosDevice || /mobile/i.test(navigator.userAgent);
@@ -893,22 +893,22 @@ function App() {
   });
 
   const positionsQuery = useGetPositions(
-    { wallet: walletAddress || "0" },
+    { wallet: queryWalletAddress },
     {
       query: {
-        queryKey: ["positions", walletAddress],
-        enabled: canQueryWallet,
+        queryKey: ["positions", queryWalletAddress],
+        enabled: queryWalletAddress.length >= 32,
         refetchInterval: 30_000,
       },
     },
   );
 
   const analyticsQuery = useGetAnalytics(
-    { wallet: walletAddress || "0" },
+    { wallet: queryWalletAddress },
     {
       query: {
-        queryKey: ["analytics", walletAddress],
-        enabled: canQueryWallet,
+        queryKey: ["analytics", queryWalletAddress],
+        enabled: queryWalletAddress.length >= 32,
         refetchInterval: 45_000,
       },
     },
@@ -1084,6 +1084,7 @@ function App() {
   const botStatus = statusQuery.data;
   const liveWalletAddress = botStatus?.lastRun?.walletAddress ?? "";
   const liveWalletLabel = liveWalletAddress ? shortAddress(liveWalletAddress) : "not configured";
+  const demoWalletView = !walletConnected && walletAddress.length === 0;
 
   const sortedPositions = useMemo(
     () => [...positions].sort((a, b) => b.liquidityUsd - a.liquidityUsd),
@@ -1553,6 +1554,12 @@ function App() {
 
         <div className="settings-section">
           <div className="section-label mb-3">BOT RUNTIME</div>
+          {demoWalletView ? (
+            <div className="wallet-connected-badge" style={{ marginBottom: 10 }}>
+              <div className="wc-dot" />
+              DEMO WALLET VIEW
+            </div>
+          ) : null}
           <div className="grid grid-auto-fit-compact gap-2">
             <div className="metric metric-compact">
               <div className="metric-val">{botStatus?.lastRun ? botStatus.lastRun.status.toUpperCase() : "NO RUN"}</div>

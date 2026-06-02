@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { GetPositionsQueryParams } from "@workspace/api-zod";
+import { DEMO_WALLET_ADDRESS, buildDemoPositions } from "../lib/demo-data";
 
 const router = Router();
 
@@ -40,6 +41,20 @@ router.get("/", async (req, res) => {
     let totalPnlUsd = 0;
 
     const positionList: any[] = Array.isArray(raw) ? raw : (raw.userPositions || []);
+    const demoPositions = wallet === DEMO_WALLET_ADDRESS || positionList.length === 0 ? buildDemoPositions() : [];
+
+    if (demoPositions.length > 0) {
+      const totalLiquidityUsd = demoPositions.reduce((sum, position) => sum + position.liquidityUsd, 0);
+      const totalFeesEarned = demoPositions.reduce((sum, position) => sum + position.feesEarned, 0);
+      const totalPnlUsd = demoPositions.reduce((sum, position) => sum + position.pnlUsd, 0);
+
+      return res.json({
+        positions: demoPositions,
+        totalLiquidityUsd: Math.round(totalLiquidityUsd * 100) / 100,
+        totalFeesEarned: Math.round(totalFeesEarned * 100) / 100,
+        totalPnlUsd: Math.round(totalPnlUsd * 100) / 100,
+      });
+    }
 
     for (const pos of positionList) {
       try {
