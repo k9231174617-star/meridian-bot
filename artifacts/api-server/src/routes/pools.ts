@@ -89,6 +89,7 @@ function geckoTerminalPoolToPool(record: Record<string, unknown>): Record<string
     mint_x: baseTokenId || address,
     mint_y: quoteTokenId || "So11111111111111111111111111111111111111112",
     liquidity,
+    tvl: liquidity,
     trade_volume_24h: volume24h,
     fees_24h: fee24h,
     current_price: price,
