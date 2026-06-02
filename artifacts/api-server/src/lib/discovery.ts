@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type SupportedDex = "meteora" | "raydium" | "orca";
@@ -11,7 +11,7 @@ export type DiscoverySettings = {
 export type DiscoveryCandidate = {
   id: string;
   dex: SupportedDex;
-  source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
+  source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "rpc-account" | "fallback";
   signature?: string;
   detectedAt: string;
   confidence: number;
@@ -19,9 +19,22 @@ export type DiscoveryCandidate = {
   pool: Record<string, unknown>;
 };
 
+export type DiscoveryObservation = {
+  id: string;
+  dex?: SupportedDex;
+  source: DiscoveryCandidate["source"];
+  signature?: string;
+  detectedAt: string;
+  keywords: string[];
+  status: "accepted" | "rejected";
+  reason: string;
+  accounts?: string[];
+};
+
 type DiscoveryRecord =
   | { kind: "settings"; settings: DiscoverySettings }
-  | { kind: "candidate"; candidate: DiscoveryCandidate };
+  | { kind: "candidate"; candidate: DiscoveryCandidate }
+  | { kind: "observation"; observation: DiscoveryObservation };
 
 export function parseDexList(value: string | undefined): SupportedDex[] {
   const enabled = [...new Set((value ?? "").split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean))] as string[];
@@ -35,11 +48,7 @@ export function parseDexList(value: string | undefined): SupportedDex[] {
 }
 
 export function normalizeDiscoverySettings(input?: { enabledDexes?: unknown } | null, fallback?: SupportedDex[]): DiscoverySettings {
-  const enabledDexes = Array.isArray(input?.enabledDexes)
-    ? parseDexList((input.enabledDexes as string[]).join(","))
-    : typeof input?.enabledDexes === "string"
-      ? parseDexList(input.enabledDexes)
-      : fallback ?? ["meteora", "raydium", "orca"];
+  const enabledDexes = parseDiscoveryDexEntries(input?.enabledDexes, fallback);
   return {
     enabledDexes,
     updatedAt: new Date().toISOString(),
@@ -51,7 +60,7 @@ export async function loadDiscoverySettings(storageDir?: string, fallback?: Supp
     const raw = await readFile(resolveDiscoverySettingsPath(storageDir), "utf8");
     const parsed = JSON.parse(raw) as Partial<DiscoverySettings>;
     return {
-      enabledDexes: parseDexList(parsed.enabledDexes?.join(",")) ?? (fallback ?? ["meteora", "raydium", "orca"]),
+      enabledDexes: parseDiscoveryDexEntries(parsed.enabledDexes, fallback),
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
     };
   } catch {
@@ -92,6 +101,30 @@ export async function loadDiscoveryCandidates(storageDir?: string, limit = 50): 
   }
 }
 
+export async function loadDiscoveryObservations(storageDir?: string, limit = 50): Promise<DiscoveryObservation[]> {
+  try {
+    const raw = await readFile(resolveDiscoveryObservationsPath(storageDir), "utf8");
+    const records = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line) as DiscoveryRecord];
+        } catch {
+          return [];
+        }
+      });
+
+    return records
+      .filter((record): record is Extract<DiscoveryRecord, { kind: "observation" }> => record.kind === "observation")
+      .map((record) => record.observation)
+      .slice(-limit);
+  } catch {
+    return [];
+  }
+}
+
 export function mergeDiscoveredPools(basePools: any[], candidates: DiscoveryCandidate[], enabledDexes: SupportedDex[]) {
   const enabled = new Set(enabledDexes);
   const pools = [...basePools];
@@ -111,9 +144,28 @@ function resolveDiscoveryCandidatesPath(storageDir?: string) {
   return path.join(resolveDiscoveryDir(storageDir), "discovery-candidates.jsonl");
 }
 
+function resolveDiscoveryObservationsPath(storageDir?: string) {
+  return path.join(resolveDiscoveryDir(storageDir), "discovery-observations.jsonl");
+}
+
 function resolveDiscoveryDir(storageDir?: string) {
   const fallback = path.resolve(process.cwd(), ".bot-data", "trading-bot");
   return storageDir?.trim() ? path.resolve(storageDir) : fallback;
+}
+
+function parseDiscoveryDexEntries(value: unknown, fallback?: SupportedDex[]) {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is SupportedDex => entry === "meteora" || entry === "raydium" || entry === "orca");
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry): entry is SupportedDex => entry === "meteora" || entry === "raydium" || entry === "orca");
+  }
+
+  return fallback ?? ["meteora", "raydium", "orca"];
 }
 
 async function ensureDir(filePath: string) {

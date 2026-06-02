@@ -92,25 +92,38 @@ type DiscoveryStatus = {
   candidates: Array<{
     id: string;
     dex: SupportedDex;
-    source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
+    source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "rpc-account" | "fallback";
     signature?: string;
     detectedAt: string;
     confidence: number;
     keywords: string[];
     pool: Pool;
   }>;
+  observations: Array<{
+    id: string;
+    dex?: SupportedDex;
+    source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "rpc-account" | "fallback";
+    signature?: string;
+    detectedAt: string;
+    keywords: string[];
+    status: "accepted" | "rejected";
+    reason: string;
+    accounts?: string[];
+  }>;
   totals: {
     candidates: number;
     meteora: number;
     raydium: number;
     orca: number;
+    observations: number;
+    rejected: number;
   };
 };
 
 type UiPool = Pool & {
   dex?: SupportedDex;
   discoveryConfidence?: number;
-  discoverySource?: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
+  discoverySource?: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "rpc-account" | "fallback";
   discoverySignature?: string;
   isDiscoveryCandidate?: boolean;
 };
@@ -831,7 +844,8 @@ function App() {
   const activePoolsCount = positions.length;
   const activeSignalsCount = visiblePools.filter((pool) => pool.signalType === PoolSignalType.ENTER).length;
   const discoveryCandidates = discovery?.candidates ?? [];
-  const discoveryTotals = discovery?.totals ?? { candidates: 0, meteora: 0, raydium: 0, orca: 0 };
+  const discoveryObservations = discovery?.observations ?? [];
+  const discoveryTotals = discovery?.totals ?? { candidates: 0, meteora: 0, raydium: 0, orca: 0, observations: 0, rejected: 0 };
 
   const sortedPositions = useMemo(
     () => [...positions].sort((a, b) => b.liquidityUsd - a.liquidityUsd),
@@ -1906,10 +1920,10 @@ function App() {
               })}
             </div>
             <div className="paper-trade-hint" style={{ marginTop: 12 }}>
-              Active: {enabledDexes.join(", ") || "none"} · candidates {discoveryTotals.candidates}
+              Active: {enabledDexes.join(", ") || "none"} · candidates {discoveryTotals.candidates} · rejected {discoveryTotals.rejected ?? 0}
             </div>
           </div>
-          <div className="card" style={{ paddingTop: 8, paddingBottom: 8 }}>
+          <div className="card" style={{ paddingTop: 8, paddingBottom: 8, marginBottom: 12 }}>
             {discoveryCandidates.length > 0 ? (
               discoveryCandidates.slice(0, 5).map((candidate) => (
                 <div className="smartmoney-row" key={candidate.id}>
@@ -1926,6 +1940,30 @@ function App() {
               ))
             ) : (
               <div className="py-4 text-sm text-[var(--text-dim)]">No discovery candidates yet</div>
+            )}
+          </div>
+          <div className="card" style={{ paddingTop: 8, paddingBottom: 8 }}>
+            {discoveryObservations.length > 0 ? (
+              discoveryObservations.slice(-5).reverse().map((observation) => (
+                <div className="smartmoney-row" key={observation.id}>
+                  <div className="sm-wallet" style={{ fontSize: 12, color: "var(--text)" }}>
+                    {observation.dex ? `${observation.dex.toUpperCase()} · ` : ""}
+                    {observation.status.toUpperCase()} DISCOVERY
+                  </div>
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 10, color: "var(--neon-cyan)" }}>
+                    {observation.source.toUpperCase()}
+                    {observation.signature ? ` · ${shortAddress(observation.signature)}` : ""}
+                  </div>
+                  <div className="sm-amount" style={{ color: observation.status === "accepted" ? "var(--neon-green)" : "var(--neon-red)" }}>
+                    {observation.status === "accepted" ? "OK" : "REJECTED"}
+                  </div>
+                  <div style={{ width: "100%", fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+                    {observation.reason}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-4 text-sm text-[var(--text-dim)]">No discovery observations yet</div>
             )}
           </div>
         </div>

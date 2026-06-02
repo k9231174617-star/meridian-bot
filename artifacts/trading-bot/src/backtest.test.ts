@@ -33,6 +33,7 @@ test("backtest returns metrics", async () => {
       mode: "paper",
       provider: "direct",
       enabledDexes: ["meteora", "raydium", "orca"],
+      discoveryBackfillLimit: 3,
       marketDataBaseUrl: "http://127.0.0.1:8081/api",
       intervalMs: 1000,
       useJito: false,

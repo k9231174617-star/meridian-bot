@@ -366,6 +366,18 @@ test("discovery endpoint reads and updates enabled dexes", { concurrency: false 
       assert.equal(update.status, 200);
       const updateBody = await update.json() as { settings: { enabledDexes: string[] } };
       assert.deepEqual(updateBody.settings.enabledDexes.sort(), ["meteora", "orca"].sort());
+
+      const disableAll = await fetch(`${baseUrl}/api/bot/discovery`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({ enabledDexes: [] }),
+      });
+      assert.equal(disableAll.status, 200);
+      const disableAllBody = await disableAll.json() as { settings: { enabledDexes: string[] } };
+      assert.deepEqual(disableAllBody.settings.enabledDexes, []);
     });
   } finally {
     process.env.BOT_STORAGE_DIR = originalStorageDir;

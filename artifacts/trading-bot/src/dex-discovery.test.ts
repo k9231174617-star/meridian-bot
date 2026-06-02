@@ -27,9 +27,11 @@ test("discoverRecentProgramCandidates filters program signatures into dex candid
     },
   };
 
-  const candidates = await discoverRecentProgramCandidates(connection as never, ["raydium"], new Set<string>(), 1);
-  assert.equal(candidates.length, 1);
-  assert.equal(candidates[0].dex, "raydium");
-  assert.equal(candidates[0].source, "rpc-recent");
-  assert.equal(candidates[0].signature, "sig-1");
+  const discovery = await discoverRecentProgramCandidates(connection as never, ["raydium"], new Set<string>(), 1);
+  assert.equal(discovery.candidates.length, 1);
+  assert.equal(discovery.observations.length, 1);
+  assert.equal(discovery.candidates[0].dex, "raydium");
+  assert.equal(discovery.candidates[0].source, "rpc-account");
+  assert.equal(discovery.candidates[0].signature, "sig-1");
+  assert.equal(discovery.observations[0].status, "accepted");
 });

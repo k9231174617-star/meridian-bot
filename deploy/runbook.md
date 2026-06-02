@@ -34,7 +34,9 @@
 - `BOT_ENABLE_WSS_POOL_WATCHER=true`
 - `BOT_RPC_WS_URL`
 - `BOT_WSS_LOG_KEYWORDS`
+- `BOT_DISCOVERY_BACKFILL_LIMIT`
 - `GET /api/bot/discovery` to inspect and toggle DEX discovery sources
+- discovery observations in `/api/bot/discovery` to inspect accepted and rejected scans
 - dashboard `Paper Trading` control via `/api/bot/paper-trade`
 - `BOT_MAX_POOL_AGE_HOURS`
 - `BOT_REQUIRE_VERIFIED_POOL_METADATA=true`

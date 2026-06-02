@@ -88,6 +88,7 @@ const configSchema = z.object({
   BOT_BACKTEST_SNAPSHOTS_FILE: z.string().optional(),
   BOT_ENABLE_WSS_POOL_WATCHER: booleanFromEnv().default(false),
   BOT_WSS_LOG_KEYWORDS: z.string().default("initialize,create_pool,create,lb_pair,whirlpool,raydium,meteora,open_position"),
+  BOT_DISCOVERY_BACKFILL_LIMIT: z.coerce.number().int().positive().default(15),
   DATABASE_URL: z.string().optional(),
 });
 
@@ -158,6 +159,7 @@ export type BotConfig = {
   backtestSnapshotsFile?: string;
   enableWssPoolWatcher: boolean;
   wssLogKeywords: string[];
+  discoveryBackfillLimit: number;
   databaseUrl?: string;
 };
 
@@ -244,6 +246,7 @@ export function loadConfig(env = process.env): BotConfig {
     backtestSnapshotsFile: parsed.BOT_BACKTEST_SNAPSHOTS_FILE,
     enableWssPoolWatcher: parsed.BOT_ENABLE_WSS_POOL_WATCHER,
     wssLogKeywords: parseCsvList(parsed.BOT_WSS_LOG_KEYWORDS),
+    discoveryBackfillLimit: parsed.BOT_DISCOVERY_BACKFILL_LIMIT,
     databaseUrl: parsed.DATABASE_URL,
     risk,
   };

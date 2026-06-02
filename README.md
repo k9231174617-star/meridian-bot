@@ -77,8 +77,10 @@ an explicit remote API endpoint.
   guardrail, `BOT_PAPER_MAX_CYCLES` for bounded paper sessions, and a local
   `BOT_PAPER_DEBUG_FORCE_SIGNAL` / `BOT_PAPER_DEBUG_BYPASS_RISK` pair for
   guaranteed test-trading sessions, plus `BOT_ENABLED_DEXES` for initial
-  DEX selection and the runtime discovery settings endpoint for switching
-  Meteora, Raydium, and Orca on or off,
+  DEX selection, `BOT_DISCOVERY_BACKFILL_LIMIT` for recent signature scans,
+  and the runtime discovery settings endpoint for switching Meteora,
+  Raydium, and Orca on or off while inspecting accepted/rejected discovery
+  observations in the dashboard,
   JSONL storage fallback via `BOT_STORAGE_DIR` when no database URL is
   configured.
 - Live execution supports Jupiter swaps plus Meteora DLMM add/remove liquidity
