@@ -1052,6 +1052,12 @@ function App() {
   const paperTradeRunning = paperTradeStatus?.status === "running" || paperTradeStatus?.status === "stopping";
   const runSummary: RunSummary = botStatus?.lastRun?.summary ?? {};
   const summaryExecutions = runSummary.executions ?? ((runSummary.fills ?? 0) + (runSummary.failed ?? 0));
+  const apiHealthy = healthQuery.data?.status === "ok";
+  const latestAlert = botStatus?.recentAlerts[0];
+  const poolsLoadError = poolsQuery.error instanceof Error ? poolsQuery.error.message : poolsQuery.error ? String(poolsQuery.error) : "";
+  const positionsLoadError = positionsQuery.error instanceof Error ? positionsQuery.error.message : positionsQuery.error ? String(positionsQuery.error) : "";
+  const analyticsLoadError = analyticsQuery.error instanceof Error ? analyticsQuery.error.message : analyticsQuery.error ? String(analyticsQuery.error) : "";
+  const pricesLoadError = pricesQuery.error instanceof Error ? pricesQuery.error.message : pricesQuery.error ? String(pricesQuery.error) : "";
 
   return (
     <main className="dashboard-root min-h-screen bg-background text-foreground">
@@ -1153,6 +1159,15 @@ function App() {
               <div className="metric-val">{botStatus ? formatRelativeShort(botStatus.updatedAt) : "—"}</div>
               <div className="metric-lbl">Updated</div>
             </div>
+          </div>
+          <div className="section-title mt-4">{t.marketSnapshot}</div>
+          <div className="grid grid-auto-fit gap-3">
+            <MetricBox value={apiHealthy ? "OK" : "DEGRADED"} label="API HEALTH" valueClass={apiHealthy ? "green" : "orange"} />
+            <MetricBox value={botStatus?.lastRun?.status?.toUpperCase() ?? "NO RUN"} label="BOT STATUS" valueClass="cyan" />
+            <MetricBox value={latestAlert ? latestAlert.severity.toUpperCase() : "NONE"} label="LATEST ALERT" valueClass={latestAlert?.severity === "warning" ? "orange" : "violet"} />
+            <MetricBox value={`${discoveryTotals.candidates}`} label="DISCOVERY CANDIDATES" valueClass="green" />
+            <MetricBox value={`${poolsQuery.data?.total ?? 0}`} label="LIVE POOLS" valueClass="cyan" />
+            <MetricBox value={`${Math.round(winRate)}%`} label={t.winRate} valueClass="violet" />
           </div>
           <div className="paper-trade-control">
             <div className="paper-trade-row">
@@ -1260,7 +1275,25 @@ function App() {
         </div>
 
         <div className="space-y-3">
-          {visiblePools.map((pool) => {
+          {poolsQuery.isLoading ? (
+            <div className="card">
+              <div className="section-label">Loading live pools...</div>
+              <div className="paper-trade-hint">Waiting for pool snapshot and signal enrichment.</div>
+            </div>
+          ) : poolsLoadError ? (
+            <div className="card">
+              <div className="section-label" style={{ color: "var(--neon-red)" }}>POOL FEED ERROR</div>
+              <div className="paper-trade-hint">{poolsLoadError}</div>
+              <button className="connect-wallet-btn" type="button" onClick={() => poolsQuery.refetch()}>
+                RETRY FEED
+              </button>
+            </div>
+          ) : visiblePools.length === 0 ? (
+            <div className="card">
+              <div className="section-label">No pools matched current filters</div>
+              <div className="paper-trade-hint">Try lowering TVL or Jupiter thresholds.</div>
+            </div>
+          ) : visiblePools.map((pool) => {
             const tone = poolTone(pool);
             const badge = pool.signalType === PoolSignalType.ENTER ? t.enter : pool.signalType === PoolSignalType.AVOID ? "AVOID" : t.watch;
             const feeYield = selectedPool?.address === pool.address ? selectedPoolYield : pool.tvl > 0 ? (pool.fee24h / pool.tvl) * 100 : 0;
@@ -1283,6 +1316,7 @@ function App() {
                       <div className="token-pair">
                         {(pool.dex ?? "meteora").toUpperCase()} · bin step {pool.binStep}
                         {pool.isDiscoveryCandidate ? " · discovery" : ""}
+                        {pool.discoveryConfidence !== undefined ? ` · ${Math.round(pool.discoveryConfidence * 100)}% confidence` : ""}
                       </div>
                     </div>
                   </div>
@@ -1322,6 +1356,10 @@ function App() {
                   <div className="score-num" style={{ color: pool.ilRisk === PoolIlRisk.HIGH ? "var(--neon-red)" : pool.ilRisk === PoolIlRisk.MEDIUM ? "var(--neon-violet)" : "var(--neon-green)" }}>
                     {pool.ilRisk}
                   </div>
+                </div>
+                <div className="signal-footer" style={{ marginBottom: 4 }}>
+                  <div className="signal-time">DEX {pool.dex ?? "meteora"} · source {pool.discoverySource ?? "meteora-api"}</div>
+                  <div className="signal-time">{pool.tokenSafetyScore !== undefined ? `SAFETY ${Math.round(pool.tokenSafetyScore)}` : "NO SAFETY DATA"}</div>
                 </div>
 
                 <div className="signal-footer">
@@ -1369,6 +1407,10 @@ function App() {
                 <MetricBox value={formatCurrency(selectedPool.tvl, 1)} label={t.tvl} valueClass="green" />
                 <MetricBox value={formatCurrency(selectedPool.volume24h, 1)} label={t.volume24h} valueClass="orange" />
                 <MetricBox value={String(selectedPool.activeBinId)} label="ACTIVE BIN" valueClass="violet" />
+                <MetricBox value={formatPercent(selectedPoolYield, 2)} label="FEE YIELD" valueClass="green" />
+                <MetricBox value={(selectedPool.dex ?? "meteora").toUpperCase()} label="DEX" valueClass="cyan" />
+                <MetricBox value={selectedPool.discoverySource ? selectedPool.discoverySource.toUpperCase() : "API"} label="SOURCE" valueClass="violet" />
+                <MetricBox value={selectedPool.discoveryConfidence !== undefined ? `${Math.round(selectedPool.discoveryConfidence * 100)}%` : "N/A"} label="CONFIDENCE" valueClass={selectedPool.discoveryConfidence !== undefined && selectedPool.discoveryConfidence >= 0.7 ? "green" : "orange"} />
               </div>
               <div className="score-row">
                 <div className="score-label">{t.signalScore}</div>
@@ -1387,6 +1429,23 @@ function App() {
                 <div className="score-num" style={{ color: "var(--neon-cyan)" }}>
                   {Math.round(selectedPool.jupScore)}
                 </div>
+              </div>
+              <div className="score-row">
+                <div className="score-label">RISK INTEL</div>
+                <div className="score-bar-bg">
+                  <div className="score-bar-fill fill-violet" style={{ width: `${clamp(selectedPool.rugRiskScore ?? 0, 0, 100)}%` }} />
+                </div>
+                <div className="score-num" style={{ color: "var(--neon-violet)" }}>
+                  {selectedPool.rugRiskScore !== undefined ? Math.round(selectedPool.rugRiskScore) : "—"}
+                </div>
+              </div>
+              <div className="signal-metrics" style={{ marginTop: 16 }}>
+                <MetricBox value={selectedPool.tokenSafetyScore !== undefined ? String(Math.round(selectedPool.tokenSafetyScore)) : "N/A"} label="TOKEN SAFETY" valueClass="green" />
+                <MetricBox value={selectedPool.degenScore !== undefined ? String(Math.round(selectedPool.degenScore)) : "N/A"} label="DEGEN" valueClass="cyan" />
+                <MetricBox value={selectedPool.socialVelocityScore !== undefined ? String(Math.round(selectedPool.socialVelocityScore)) : "N/A"} label="SOCIAL" valueClass="orange" />
+                <MetricBox value={selectedPool.whalePressureScore !== undefined ? String(Math.round(selectedPool.whalePressureScore)) : "N/A"} label="WHALE PRESSURE" valueClass="violet" />
+                <MetricBox value={selectedPool.previousRugsByDev !== undefined ? String(selectedPool.previousRugsByDev) : "N/A"} label="PRIOR RUGS" valueClass="orange" />
+                <MetricBox value={selectedPool.eventWindowActive ? (selectedPool.eventName ?? "ACTIVE") : "CLOSED"} label="EVENT WINDOW" valueClass={selectedPool.eventWindowActive ? "green" : "orange"} />
               </div>
               <div className="signal-footer">
                 <div className="signal-time">{t.updated}: {poolsQuery.data?.lastUpdated ?? "—"}</div>
@@ -1410,6 +1469,9 @@ function App() {
           <div className="section-label" style={{ marginBottom: 8 }} id="s-wallet-act">
             {t.recentWalletActivity}
           </div>
+          {positionsLoadError ? (
+            <div className="py-4 text-sm text-[var(--neon-red)]">{positionsLoadError}</div>
+          ) : null}
           {poolActivityRows.length > 0 ? (
             poolActivityRows.map((row, index) => (
               <div className="smartmoney-row" key={row.id}>
@@ -1731,6 +1793,7 @@ function App() {
             {t.assets}
           </div>
           <div className="card" style={{ paddingTop: 8, paddingBottom: 8 }}>
+            {pricesLoadError ? <div className="py-2 text-xs text-[var(--neon-orange)]">{pricesLoadError}</div> : null}
             {positionWalletRows.length > 0 ? (
               positionWalletRows.map((asset) => {
                 const colorClass = asset.symbol === "SOL" ? "sol-a" : asset.symbol === "USDC" ? "usdc-a" : "jup-a";
@@ -2038,6 +2101,7 @@ function App() {
             <div className="setting-right" style={{ color: "var(--neon-cyan)" }}>v1.0</div>
           </div>
         </div>
+        {analyticsLoadError ? <div className="card" style={{ marginTop: 12, color: "var(--neon-red)" }}>{analyticsLoadError}</div> : null}
       </div>
 
       <div className={`bottom-nav dashboard-bottom-nav`} id="bottomNav">
