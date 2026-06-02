@@ -144,6 +144,9 @@ importers:
 
   artifacts/meridian:
     dependencies:
+      '@solana-mobile/wallet-adapter-mobile':
+        specifier: ^2.2.7
+        version: 2.2.7(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(typescript@5.9.3)
       '@solana-mobile/wallet-standard-mobile':
         specifier: ^0.5.2
         version: 0.5.2(typescript@5.9.3)
@@ -2265,11 +2268,6 @@ packages:
     resolution: {integrity: sha512-en0v+0fIB4MWix+pxVeWi2DMjLaQSivdxqr9GQ4mVj1OhhEeYqqR/jETgfan/a3T5DKyDCGTs5AQfz909tEwfA==}
     peerDependencies:
       '@solana/web3.js': ^1.98.4
-
-  '@solana-mobile/mobile-wallet-adapter-protocol@2.2.7':
-    resolution: {integrity: sha512-Rl9VIfnRUYqOOXjhOQXkHXsU+LnVvkJzkV3+if4BPP8v/Y4028H6SLJwFunIAqugNCDyV2XVhlwAQ9JOwnqdrg==}
-    peerDependencies:
-      react-native: '>0.74'
 
   '@solana-mobile/mobile-wallet-adapter-protocol@2.2.8':
     resolution: {integrity: sha512-c3FQsrM7nV62DqVaHGKtr2osE2w5gS3/wjy8ILF0zczS/s1mERX+JTmf+UHd8xgESmEj/IM7q+U2Qhrmac1PdA==}
@@ -8380,24 +8378,13 @@ snapshots:
 
   '@solana-mobile/mobile-wallet-adapter-protocol-web3js@2.2.7(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
-      '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.7(typescript@5.9.3)
+      '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.8(typescript@5.9.3)
       '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)
       bs58: 6.0.0
       js-base64: 3.7.8
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
       - react-native
-      - typescript
-
-  '@solana-mobile/mobile-wallet-adapter-protocol@2.2.7(typescript@5.9.3)':
-    dependencies:
-      '@solana/codecs-strings': 6.7.0(typescript@5.9.3)
-      '@solana/wallet-standard-features': 1.3.0
-      '@solana/wallet-standard-util': 1.1.2
-      '@wallet-standard/core': 1.1.1
-      js-base64: 3.7.8
-    transitivePeerDependencies:
-      - fastestsmallesttextencoderdecoder
       - typescript
 
   '@solana-mobile/mobile-wallet-adapter-protocol@2.2.8(typescript@5.9.3)':
@@ -8413,7 +8400,7 @@ snapshots:
 
   '@solana-mobile/wallet-adapter-mobile@2.2.7(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(typescript@5.9.3)':
     dependencies:
-      '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.7(typescript@5.9.3)
+      '@solana-mobile/mobile-wallet-adapter-protocol': 2.2.8(typescript@5.9.3)
       '@solana-mobile/mobile-wallet-adapter-protocol-web3js': 2.2.7(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(typescript@5.9.3)
       '@solana-mobile/wallet-standard-mobile': 0.5.2(typescript@5.9.3)
       '@solana/wallet-adapter-base': 0.9.27(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))

@@ -2,6 +2,7 @@ import { lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type WalletName } from "@solana/wallet-adapter-base";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { SolanaMobileWalletAdapterWalletName } from "@solana-mobile/wallet-standard-mobile";
 import {
   PoolSignalType,
   PoolIlRisk,
@@ -773,7 +774,7 @@ function App() {
     [adapterWallets],
   );
   const mobileWalletAdapterName = useMemo(
-    () => adapterWallets.find((entry) => /mobile wallet adapter/i.test(entry.adapter.name))?.adapter.name ?? "",
+    () => adapterWallets.find((entry) => entry.adapter.name === SolanaMobileWalletAdapterWalletName)?.adapter.name ?? "",
     [adapterWallets],
   );
 
@@ -1125,7 +1126,7 @@ function App() {
   const analytics = analyticsQuery.data;
   const walletPositions = (positionsQuery.data?.positions ?? []) as DashboardPosition[];
   const botPositions = (botPositionsQuery.data?.positions ?? []) as DashboardPosition[];
-  const positions = botPositions.length > 0 ? botPositions : walletPositions;
+  const positions = walletConnected ? walletPositions : botPositions.length > 0 ? botPositions : walletPositions;
   const prices = pricesQuery.data?.prices ?? {};
   const discovery = discoveryQuery.data;
   const signalFeed = signalFeedQuery.data;
@@ -1151,9 +1152,21 @@ function App() {
   const walletTotalFeesEarned = analytics?.totalFeesEarned ?? positionsQuery.data?.totalFeesEarned ?? 0;
   const walletTotalLiquidityUsd = positionsQuery.data?.totalLiquidityUsd ?? 0;
   const botPositionSummary = botPositionsQuery.data;
-  const totalPnlUsd = botPositions.length > 0 ? botPositionSummary?.totalPnlUsd ?? 0 : walletTotalPnlUsd;
-  const totalFeesEarned = botPositions.length > 0 ? botPositionSummary?.totalFeesEarned ?? 0 : walletTotalFeesEarned;
-  const totalLiquidityUsd = botPositions.length > 0 ? botPositionSummary?.totalLiquidityUsd ?? 0 : walletTotalLiquidityUsd;
+  const totalPnlUsd = walletConnected
+    ? walletTotalPnlUsd
+    : botPositions.length > 0
+      ? botPositionSummary?.totalPnlUsd ?? 0
+      : walletTotalPnlUsd;
+  const totalFeesEarned = walletConnected
+    ? walletTotalFeesEarned
+    : botPositions.length > 0
+      ? botPositionSummary?.totalFeesEarned ?? 0
+      : walletTotalFeesEarned;
+  const totalLiquidityUsd = walletConnected
+    ? walletTotalLiquidityUsd
+    : botPositions.length > 0
+      ? botPositionSummary?.totalLiquidityUsd ?? 0
+      : walletTotalLiquidityUsd;
   const totalTrades = analytics?.totalTrades ?? positions.length;
   const winRate = analytics?.winRate ?? 0;
   const avgHoldHours = analytics?.avgHoldTime ?? 0;
@@ -1353,86 +1366,56 @@ function App() {
       return;
     }
 
-    if (isAndroidDevice && mobileWalletAdapterName) {
+    const provider = resolveInjectedWalletProvider(providerName);
+    if (provider?.connect) {
       try {
+        setWalletConnectPendingProvider(providerName);
+        const response = await provider.connect({ onlyIfTrusted: false });
+        const address = response?.publicKey?.toBase58() ?? provider.publicKey?.toBase58();
+        if (!address) {
+          throw new Error(`${providerName} did not return a wallet address`);
+        }
+        setWalletAddress(address);
+        setWalletProvider(providerName);
+        setWalletConnected(true);
+        setWalletModalOpen(false);
+        setWalletConnectPendingProvider("");
+        toastMessage(`${providerName} · ${shortAddress(address)} connected`);
+        return;
+      } catch (error) {
+        setWalletConnectPendingProvider("");
+        toastMessage(error instanceof Error ? error.message : String(error));
+        return;
+      }
+    }
+
+    try {
+      if (isAndroidDevice && mobileWalletAdapterName) {
         setWalletConnectPendingProvider(providerName);
         setWalletProvider(providerName);
         select(mobileWalletAdapterName as WalletName<string>);
         await connect();
         toastMessage(`${providerName} connection requested`);
         return;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setWalletConnectPendingProvider("");
-        toastMessage(message);
-        return;
       }
-    }
 
-    if (providerName === "Phantom" || providerName === "Solflare") {
-      if (adapterWalletNames.has(providerName)) {
-        try {
+      if (providerName === "Phantom" || providerName === "Solflare") {
+        if (adapterWalletNames.has(providerName)) {
           select(providerName as WalletName<string>);
+          setWalletConnectPendingProvider(providerName);
           await connect();
           toastMessage(`${providerName} connection requested`);
-          setWalletConnectPendingProvider("");
           return;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (/not ready|not detected|not installed/i.test(message)) {
-            if (!isMobileDevice) {
-              toastMessage(`Opening ${providerName}`);
-            }
-          } else {
-            toastMessage(message);
-            return;
-          }
         }
       }
-    }
 
-    const provider = resolveInjectedWalletProvider(providerName);
-    if (!provider?.connect) {
-      try {
-        setWalletConnectPendingProvider(providerName);
-        const url = buildMobileWalletConnectUrl(providerName);
-        window.location.href = url;
-        toastMessage(`Opening ${providerName}`);
-      } catch (error) {
-        setWalletConnectPendingProvider("");
-        toastMessage(error instanceof Error ? error.message : String(error));
-      }
-      return;
-    }
-
-    try {
-      const response = await provider.connect({ onlyIfTrusted: false });
-      const address = response?.publicKey?.toBase58() ?? provider.publicKey?.toBase58();
-      if (!address) {
-        throw new Error(`${providerName} did not return a wallet address`);
-      }
-
-      setWalletAddress(address);
-      setWalletProvider(providerName);
-      setWalletConnected(true);
-      setWalletModalOpen(false);
-      setWalletConnectPendingProvider("");
-      toastMessage(`${providerName} · ${shortAddress(address)} connected`);
+      setWalletConnectPendingProvider(providerName);
+      const url = buildMobileWalletConnectUrl(providerName);
+      window.location.href = url;
+      toastMessage(`Opening ${providerName}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/not ready|not detected|not installed/i.test(message)) {
-        try {
-          setWalletConnectPendingProvider(providerName);
-          const url = buildMobileWalletConnectUrl(providerName);
-          window.location.href = url;
-          toastMessage(`Opening ${providerName}`);
-        } catch (launchError) {
-          setWalletConnectPendingProvider("");
-          toastMessage(launchError instanceof Error ? launchError.message : String(launchError));
-        }
-        return;
-      }
-      toastMessage(message);
+      setWalletConnectPendingProvider("");
+      toastMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
