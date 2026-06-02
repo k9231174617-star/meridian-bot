@@ -34,7 +34,7 @@ router.get("/", async (req, res) => {
     let totalFeesEarned = 0;
     let totalPnlUsd = 0;
 
-    const positionList: any[] = Array.isArray(raw) ? raw : (raw.userPositions || []);
+    const positionList: any[] = Array.isArray(raw) ? raw : (raw?.userPositions || []);
     const demoPositions = wallet === DEMO_WALLET_ADDRESS || positionList.length === 0 ? buildDemoPositions() : [];
 
     if (demoPositions.length > 0) {
