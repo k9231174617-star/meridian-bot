@@ -497,3 +497,35 @@ test("signals endpoint returns recent signals newest-first", { concurrency: fals
     process.env.BOT_STORAGE_DIR = originalStorageDir;
   }
 });
+
+
+test("bot controls persist auto trading state", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "bot-controls-"));
+  const originalStorageDir = process.env.BOT_STORAGE_DIR;
+  process.env.BOT_STORAGE_DIR = dir;
+
+  try {
+    await withServer(async (baseUrl) => {
+      const initial = await fetch(`${baseUrl}/api/bot/controls`);
+      assert.equal(initial.status, 200);
+      const initialBody = await initial.json() as { autoTradingEnabled: boolean; updatedAt: string };
+      assert.equal(initialBody.autoTradingEnabled, true);
+
+      const update = await fetch(`${baseUrl}/api/bot/controls`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ autoTradingEnabled: false }),
+      });
+      assert.equal(update.status, 200);
+      const updateBody = await update.json() as { autoTradingEnabled: boolean; updatedAt: string };
+      assert.equal(updateBody.autoTradingEnabled, false);
+
+      const reloaded = await fetch(`${baseUrl}/api/bot/controls`);
+      assert.equal(reloaded.status, 200);
+      const reloadedBody = await reloaded.json() as { autoTradingEnabled: boolean; updatedAt: string };
+      assert.equal(reloadedBody.autoTradingEnabled, false);
+    });
+  } finally {
+    process.env.BOT_STORAGE_DIR = originalStorageDir;
+  }
+});

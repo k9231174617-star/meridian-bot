@@ -8,6 +8,7 @@ import botRouter from "./bot";
 import discoveryRouter from "./discovery";
 import signalsRouter from "./signals";
 import paperTradeRouter from "./paper-trade";
+import botControlsRouter from "./bot-controls";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use("/bot", botRouter);
 router.use("/bot/discovery", discoveryRouter);
 router.use("/bot/signals", signalsRouter);
 router.use("/bot/paper-trade", paperTradeRouter);
+router.use("/bot/controls", botControlsRouter);
 
 export default router;

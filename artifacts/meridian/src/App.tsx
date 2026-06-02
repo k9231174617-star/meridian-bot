@@ -61,6 +61,11 @@ type BotStatus = {
   }>;
 };
 
+type BotControls = {
+  autoTradingEnabled: boolean;
+  updatedAt: string;
+};
+
 type PaperTradeStatus = {
   status: "idle" | "running" | "stopping" | "completed" | "failed";
   pid?: number;
@@ -528,6 +533,32 @@ async function fetchPaperTradeStatus(): Promise<PaperTradeStatus> {
   return (await response.json()) as PaperTradeStatus;
 }
 
+async function fetchBotControls(): Promise<BotControls> {
+  const response = await fetch("/api/bot/controls", { headers: { Accept: "application/json" } });
+  if (!response.ok) {
+    throw new Error(`Bot controls request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as BotControls;
+}
+
+async function saveBotControls(autoTradingEnabled: boolean): Promise<BotControls> {
+  const response = await fetch("/api/bot/controls", {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({ autoTradingEnabled }),
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error ?? `Bot controls update failed: ${response.status}`);
+  }
+
+  return payload as BotControls;
+}
+
 async function fetchDiscoveryStatus(): Promise<DiscoveryStatus> {
   const response = await fetch("/api/bot/discovery", { headers: { Accept: "application/json" } });
   if (!response.ok) {
@@ -799,6 +830,21 @@ function App() {
     queryFn: fetchPaperTradeStatus,
     refetchInterval: 10_000,
   });
+  const botControlsQuery = useQuery({
+    queryKey: ["bot-controls"],
+    queryFn: fetchBotControls,
+    refetchInterval: 20_000,
+  });
+  const botControlsMutation = useMutation({
+    mutationFn: saveBotControls,
+    onSuccess: async () => {
+      toastMessage(lang === "ru" ? "Автотрейдинг переключен" : "Auto trading toggled");
+      await Promise.all([statusQuery.refetch(), botControlsQuery.refetch()]);
+    },
+    onError: (error) => {
+      toastMessage(error instanceof Error ? error.message : String(error));
+    },
+  });
   const paperTradeMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch("/api/bot/paper-trade", {
@@ -868,6 +914,11 @@ function App() {
   const prices = pricesQuery.data?.prices ?? {};
   const discovery = discoveryQuery.data;
   const signalFeed = signalFeedQuery.data;
+  const botControls = botControlsQuery.data;
+  const autoTradingEnabled = botControls?.autoTradingEnabled ?? true;
+  useEffect(() => {
+    setAutoOpen(autoTradingEnabled);
+  }, [autoTradingEnabled]);
   useEffect(() => {
     if (discovery?.settings.enabledDexes) {
       setEnabledDexes(discovery.settings.enabledDexes);
@@ -1073,11 +1124,15 @@ function App() {
   }
 
   function startPaperTrade() {
+    if (paperTradeRunning) {
+      paperTradeStopMutation.mutate();
+      return;
+    }
     paperTradeMutation.mutate();
   }
 
-  function stopPaperTradeRun() {
-    paperTradeStopMutation.mutate();
+  function toggleAutoTrading() {
+    botControlsMutation.mutate(!autoTradingEnabled);
   }
 
   function walletBalanceLabel() {
@@ -1261,30 +1316,36 @@ function App() {
                 <span>Bypass risk gates</span>
               </label>
               <button
-                className="connect-wallet-btn paper-trade-button"
+                className={`connect-wallet-btn paper-trade-button ${autoTradingEnabled ? "active" : "inactive"}`}
                 type="button"
-                onClick={startPaperTrade}
-                disabled={paperTradeMutation.isPending || paperTradeRunning}
+                onClick={toggleAutoTrading}
+                disabled={botControlsMutation.isPending}
               >
-                {paperTradeRunning
-                  ? "RUNNING"
-                  : paperTradeMutation.isPending
-                    ? "STARTING..."
-                    : "PAPER TRADE"}
+                {botControlsMutation.isPending
+                  ? "UPDATING..."
+                  : autoTradingEnabled
+                    ? "AUTOTRADING: ON"
+                    : "AUTOTRADING: OFF"}
               </button>
               <button
-                className="paper-trade-stop-button"
+                className={`paper-trade-stop-button ${paperTradeRunning ? "active" : "inactive"}`}
                 type="button"
-                onClick={stopPaperTradeRun}
-                disabled={!paperTradeRunning || paperTradeStopMutation.isPending}
+                onClick={startPaperTrade}
+                disabled={paperTradeMutation.isPending || paperTradeStopMutation.isPending}
               >
-                {paperTradeStopMutation.isPending ? "STOPPING..." : "STOP PAPER TRADE"}
+                {paperTradeRunning
+                  ? (paperTradeStopMutation.isPending ? "STOPPING..." : "PAPER TRADE: ON")
+                  : paperTradeMutation.isPending
+                    ? "STARTING..."
+                    : "PAPER TRADE: OFF"}
               </button>
             </div>
 	        <div className="paper-trade-hint">
 	          {paperTradeDebugForceSignal || paperTradeDebugBypassRisk
 	            ? `Debug mode active · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
-	            : `Real signal mode · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`}
+	            : autoTradingEnabled
+	              ? `Real signal mode · source ${botStatus?.lastRun?.provider?.toUpperCase() ?? "N/A"}`
+	              : "Auto trading disabled · bot scans but does not execute live intents"}
 	        </div>
 	      </div>
 	    </div>
@@ -1968,8 +2029,7 @@ function App() {
             </div>
             <label className="toggle-switch">
               <input type="checkbox" checked={autoOpen} onChange={() => {
-                setAutoOpen((current) => !current);
-                toastMessage(t.settingChanged);
+                toggleAutoTrading();
               }} />
               <span className="toggle-slider" />
             </label>

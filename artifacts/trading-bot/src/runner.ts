@@ -11,6 +11,9 @@ import { createAlertSink } from "./alerts.js";
 import { TokenSafetyInspector } from "./security.js";
 import { MemeIntelService } from "./meme-intel.js";
 import { BotOrchestrator } from "./orchestrator.js";
+import { loadBotControls } from "./bot-controls.js";
+import { SelfLearningLoop } from "./learning/self-learning-loop.js";
+import { eventBus } from "./streams/event-bus.js";
 import {
   appendDiscoveryCandidate,
   appendDiscoveryObservation,
@@ -62,6 +65,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     socialApiUrl: config.meme.socialApiUrl,
     eventApiUrl: config.meme.eventApiUrl,
   });
+  const learning = await new SelfLearningLoop({ storageDir: config.storageDir }).start();
   const orchestrator = new BotOrchestrator({
     enabled: true,
     enableWssPoolWatcher: config.enableWssPoolWatcher,
@@ -234,6 +238,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       cycles += 1;
       metrics.recordCycle();
       const discoverySettings = await loadDiscoverySettings(config.storageDir, config.enabledDexes);
+      const botControls = await loadBotControls(config.storageDir);
       const seenDiscoverySignatures = new Set((await loadDiscoveryCandidates(config.storageDir, 100)).map((candidate) => candidate.signature).filter((signature): signature is string => Boolean(signature)));
       const discoveryObservationCount = (await loadDiscoveryObservations(config.storageDir, 100)).length;
 
@@ -346,7 +351,12 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
 
       const recentSnapshots = storage ? await storage.loadRecentSnapshots(6) : [];
       orchestrator.ingestSnapshot(snapshot, previous ?? undefined, recentSnapshots);
-      let cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined, history: recentSnapshots });
+      let cycleSignals = signals.generate({
+        now: snapshot,
+        previous: previous ?? undefined,
+        history: recentSnapshots,
+        learningWeights: learning.getSignalWeights(),
+      });
       if (config.mode === "paper" && config.paperDebugForceSignal && cycleSignals.length === 0) {
         const forcedSignal = buildPaperDebugSignal(snapshot, cycles, config.provider);
         if (forcedSignal) {
@@ -377,79 +387,93 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
 
       let executedThisCycle = 0;
       for (const signal of cycleSignals) {
-        if (seenSignalIds.has(signal.id)) {
-          metrics.log("signal_skipped", { signalId: signal.id, reason: "duplicate signal in the same run" });
+        const learningPlan = learning.selectPlan({
+          signal,
+          snapshot,
+          previous: previous ?? undefined,
+          history: recentSnapshots,
+        });
+        const plannedSignal = learning.applyPlan(signal, learningPlan);
+        const pool = snapshot.pools.find((entry) => entry.address === plannedSignal.poolAddress);
+
+        if (seenSignalIds.has(plannedSignal.id)) {
+          metrics.log("signal_skipped", { signalId: plannedSignal.id, reason: "duplicate signal in the same run" });
           continue;
         }
 
         if (storage) {
-          const existingSignal = await storage.loadSignal(signal.id);
+          const existingSignal = await storage.loadSignal(plannedSignal.id);
           if (!existingSignal) {
-            await storage.saveSignal(signal);
+            await storage.saveSignal(plannedSignal);
           }
 
-          const existingIntent = await storage.loadIntent(signal.id);
+          const existingIntent = await storage.loadIntent(plannedSignal.id);
           if (existingIntent) {
             const existingExecution = await storage.loadExecutionByIntentId(existingIntent.id);
             if (existingExecution && (existingExecution.status === "filled" || existingExecution.status === "simulated")) {
-              seenSignalIds.add(signal.id);
-              metrics.log("signal_skipped", { signalId: signal.id, reason: "already executed previously" });
+              seenSignalIds.add(plannedSignal.id);
+              metrics.log("signal_skipped", { signalId: plannedSignal.id, reason: "already executed previously" });
               continue;
             }
           }
         }
 
-        const decision = risk.evaluate(signal, state, snapshot, {
+        const decision = risk.evaluate(plannedSignal, state, snapshot, {
           bypassPaperFilters: config.mode === "paper" && config.paperDebugBypassRisk,
         });
         metrics.recordApproval(decision.approved);
         if (!decision.approved) {
           metrics.recordRejection(decision.reason);
         }
-        if (storage) await storage.saveRiskDecision(signal.id, decision);
+        if (storage) await storage.saveRiskDecision(plannedSignal.id, decision);
         if (!decision.approved) {
-          metrics.log("signal_rejected", { signalId: signal.id, reason: decision.reason, type: signal.type });
+          metrics.log("signal_rejected", { signalId: plannedSignal.id, reason: decision.reason, type: plannedSignal.type });
           if (decision.circuitBreakerActive) {
             await emitAlert({
               severity: "warning",
               title: "Risk control rejected a signal",
               message: decision.reason,
-              context: { signalId: signal.id, poolAddress: signal.poolAddress, type: signal.type },
+              context: { signalId: plannedSignal.id, poolAddress: plannedSignal.poolAddress, type: plannedSignal.type },
               createdAt: new Date().toISOString(),
             });
           }
           continue;
         }
 
+        if (config.mode === "live" && botControls.autoTradingEnabled === false) {
+          metrics.log("auto_trading_disabled", { signalId: plannedSignal.id, type: plannedSignal.type, poolAddress: plannedSignal.poolAddress });
+          continue;
+        }
+
         if (executedThisCycle >= config.risk.maxConcurrentIntents) {
           const message = "Max concurrent intents reached for this cycle";
-          metrics.log("intents_skipped", { cycle: cycles, signalId: signal.id, reason: message });
+          metrics.log("intents_skipped", { cycle: cycles, signalId: plannedSignal.id, reason: message });
           await emitAlert({
             severity: "warning",
             title: "Intent limit reached",
             message,
-            context: { cycle: cycles, signalId: signal.id, limit: config.risk.maxConcurrentIntents },
+            context: { cycle: cycles, signalId: plannedSignal.id, limit: config.risk.maxConcurrentIntents },
             createdAt: new Date().toISOString(),
           });
           continue;
         }
 
-        const intent = risk.buildIntent(signal, decision, config.mode);
+        const intent = risk.buildIntent(plannedSignal, decision, config.mode);
         if (seenSignalIds.has(intent.signalId)) {
           metrics.log("intent_skipped", { signalId: intent.signalId, reason: "duplicate intent in the same run" });
           continue;
         }
 
-        const executionPlan = buildExecutionPlan(intent, signal.executionHints, config.risk.maxConcurrentIntents);
+        const executionPlan = buildExecutionPlan(intent, plannedSignal.executionHints, config.risk.maxConcurrentIntents);
         for (const slice of executionPlan) {
           if (executedThisCycle >= config.risk.maxConcurrentIntents) {
             const message = "Max concurrent intents reached for this cycle";
-            metrics.log("intents_skipped", { cycle: cycles, signalId: signal.id, reason: message });
+            metrics.log("intents_skipped", { cycle: cycles, signalId: plannedSignal.id, reason: message });
             await emitAlert({
               severity: "warning",
               title: "Intent limit reached",
               message,
-              context: { cycle: cycles, signalId: signal.id, limit: config.risk.maxConcurrentIntents },
+              context: { cycle: cycles, signalId: plannedSignal.id, limit: config.risk.maxConcurrentIntents },
               createdAt: new Date().toISOString(),
             });
             break;
@@ -457,9 +481,40 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
 
           if (storage) await storage.saveIntent(slice);
 
-          const delayMs = randomDelayMs(signal.executionHints?.minDelayMs, signal.executionHints?.maxDelayMs);
+          eventBus.emit("position:open", {
+            type: "position:open",
+            ts: Date.now(),
+            poolAddress: plannedSignal.poolAddress,
+            tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
+            data: {
+              source: "trade",
+              intent: slice,
+              signal: plannedSignal,
+              snapshot,
+              plan: learningPlan,
+            },
+          });
+          if (storage) {
+            await storage.saveEventHistory(buildEventHistory({
+              type: "position:open",
+              ts: Date.now(),
+              poolAddress: plannedSignal.poolAddress,
+              tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
+              data: {
+                source: "trade",
+                signalId: plannedSignal.id,
+                intentId: slice.id,
+                strategy: learningPlan.strategy,
+                action: plannedSignal.action,
+                confidence: learningPlan.score,
+                plan: learningPlan,
+              },
+            }));
+          }
+
+          const delayMs = randomDelayMs(plannedSignal.executionHints?.minDelayMs, plannedSignal.executionHints?.maxDelayMs);
           if (delayMs > 0) {
-            metrics.log("execution_delay", { signalId: signal.id, intentId: slice.id, delayMs });
+            metrics.log("execution_delay", { signalId: plannedSignal.id, intentId: slice.id, delayMs });
             await sleep(delayMs);
           }
 
@@ -467,9 +522,42 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
             const result = await executor.execute(slice);
             metrics.recordExecution(result);
             if (storage) await storage.saveExecution(result);
-            metrics.log("execution", { signalId: signal.id, intentId: slice.id, status: result.status, reason: result.reason });
-            if (typeof signal.impermanentLossPct === "number" && signal.action !== "SWAP") {
-              metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (signal.impermanentLossPct / 100));
+            metrics.log("execution", { signalId: plannedSignal.id, intentId: slice.id, status: result.status, reason: result.reason });
+            if (typeof plannedSignal.impermanentLossPct === "number" && plannedSignal.action !== "SWAP") {
+              metrics.impermanentLossUsd += Math.max(0, result.filledUsd * (plannedSignal.impermanentLossPct / 100));
+            }
+
+            eventBus.emit("position:close", {
+              type: "position:close",
+              ts: Date.now(),
+              poolAddress: plannedSignal.poolAddress,
+              tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
+              data: {
+                source: "trade",
+                intent: slice,
+                signal: plannedSignal,
+                snapshot,
+                execution: result,
+                plan: learningPlan,
+              },
+            });
+            if (storage) {
+              await storage.saveEventHistory(buildEventHistory({
+                type: "position:close",
+                ts: Date.now(),
+                poolAddress: plannedSignal.poolAddress,
+                tokenMint: pool?.tokenXMint ?? pool?.tokenYMint,
+                data: {
+                  source: "trade",
+                  signalId: plannedSignal.id,
+                  intentId: slice.id,
+                  strategy: learningPlan.strategy,
+                  action: plannedSignal.action,
+                  confidence: learningPlan.score,
+                  plan: learningPlan,
+                  execution: result,
+                },
+              }));
             }
 
             if (result.status === "rejected" || result.status === "failed") {
@@ -477,7 +565,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
                 severity: result.status === "failed" ? "critical" : "warning",
                 title: "Execution did not complete",
                 message: result.reason ?? "Execution returned non-filled status",
-                context: { signalId: signal.id, intentId: slice.id, status: result.status },
+                context: { signalId: plannedSignal.id, intentId: slice.id, status: result.status },
                 createdAt: new Date().toISOString(),
               });
             }
@@ -494,24 +582,24 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
               circuitBreakerUntil: new Date(Date.now() + config.risk.circuitBreakerCooldownMs).toISOString(),
               lastBreakerReason: "execution failure",
             };
-            metrics.log("execution_failed", { signalId: signal.id, intentId: slice.id, error: serializeError(error) });
+            metrics.log("execution_failed", { signalId: plannedSignal.id, intentId: slice.id, error: serializeError(error) });
             await emitAlert({
               severity: "critical",
               title: "Execution failed",
               message: "An execution attempt threw an error.",
-              context: { signalId: signal.id, intentId: slice.id, error: serializeError(error) },
+              context: { signalId: plannedSignal.id, intentId: slice.id, error: serializeError(error) },
               createdAt: new Date().toISOString(),
             });
 
             if (storage && config.enableRetryQueue && config.mode === "live") {
               const retryJob = buildRetryJob(slice, serializeError(error), retryBackoffMs);
               await storage.saveRetryJob(retryJob);
-              metrics.log("retry_queued", { jobId: retryJob.id, signalId: signal.id, attempts: retryJob.attempts, nextAttemptAt: retryJob.nextAttemptAt });
+              metrics.log("retry_queued", { jobId: retryJob.id, signalId: plannedSignal.id, attempts: retryJob.attempts, nextAttemptAt: retryJob.nextAttemptAt });
             }
           }
         }
 
-        seenSignalIds.add(signal.id);
+        seenSignalIds.add(plannedSignal.id);
       }
 
       previous = snapshot;
@@ -534,6 +622,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     throw error;
   } finally {
     await stopOrchestration();
+    await learning.stop();
     const summary = metrics.snapshot();
     metrics.recordRunFinish(runStatus, new Date().toISOString());
     if (storage) {

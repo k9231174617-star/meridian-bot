@@ -3,11 +3,13 @@ import type { MarketSnapshot, PoolSnapshot, Signal, TradeAction } from "./domain
 import { calculateImpermanentLossPct } from "./analytics.js";
 import { analyzePoolIntelligence, type PoolIntelligenceContext } from "./intelligence.js";
 import { recommendDynamicSlippageBps } from "./slippage.js";
+import type { SignalWeights } from "./learning/signal-weight-tuner.js";
 
 export type SignalContext = {
   previous?: MarketSnapshot;
   now: MarketSnapshot;
   history?: MarketSnapshot[];
+  learningWeights?: Partial<SignalWeights>;
 };
 
 export type SignalEngineOptions = {
@@ -19,6 +21,7 @@ export type SignalEngineOptions = {
   maxTopHolderSharePct?: number;
   maxTopTenHolderSharePct?: number;
   maxRugRiskScore?: number;
+  learningWeights?: Partial<SignalWeights>;
 };
 
 export class SignalEngine {
@@ -26,22 +29,23 @@ export class SignalEngine {
 
   generate(context: SignalContext): Signal[] {
     const signals: Signal[] = [];
+    const learningWeights = context.learningWeights ?? this.options.learningWeights;
 
     for (const pool of context.now.pools) {
       const previous = context.previous?.pools.find((item) => item.address === pool.address);
       const deltas = computeDeltas(pool, previous);
-      const profile = deriveProfile(pool, previous, this.options);
-    const poolSignals = buildSignalsForPool(
-      pool,
-      context.now.capturedAt,
-      deltas,
-      profile,
-      previous,
-      context.previous?.capturedAt,
-      this.options,
-      context.now.pools,
-      context.history ?? [],
-      context.now.capturedAt,
+      const profile = applyLearningWeights(deriveProfile(pool, previous, this.options), learningWeights);
+      const poolSignals = buildSignalsForPool(
+        pool,
+        context.now.capturedAt,
+        deltas,
+        profile,
+        previous,
+        context.previous?.capturedAt,
+        this.options,
+        context.now.pools,
+        context.history ?? [],
+        context.now.capturedAt,
       );
 
       for (const signal of poolSignals) {
@@ -837,6 +841,25 @@ function deriveProfile(
     rugRiskScore,
     previousRugsByDev,
     holderGini,
+  };
+}
+
+function applyLearningWeights(profile: DerivedProfile, weights?: Partial<SignalWeights>): DerivedProfile {
+  if (!weights) return profile;
+
+  const holderWeight = clamp(weights.holderGini ?? 1, 0.1, 3);
+  const socialWeight = clamp(weights.socialVelocity ?? 1, 0.1, 3);
+  const degenWeight = clamp(weights.degenScore ?? 1, 0.1, 3);
+  const whaleWeight = clamp(weights.whalePressureScore ?? 1, 0.1, 3);
+  const rugsWeight = clamp(weights.previousRugs ?? 1, 0.1, 3);
+
+  return {
+    ...profile,
+    holderGini: clamp(profile.holderGini * holderWeight, 0, 1),
+    socialVelocityScore: clamp(profile.socialVelocityScore * socialWeight, 0, 100),
+    degenScore: clamp(profile.degenScore * degenWeight, 0, 100),
+    whalePressureScore: clamp(profile.whalePressureScore * whaleWeight, 0, 100),
+    previousRugsByDev: Math.max(0, Math.round(profile.previousRugsByDev * rugsWeight)),
   };
 }
 
