@@ -11,7 +11,7 @@ export type DiscoverySettings = {
 export type DiscoveryCandidate = {
   id: string;
   dex: SupportedDex;
-  source: "meteora-api" | "wss-log" | "fallback";
+  source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
   signature?: string;
   detectedAt: string;
   confidence: number;

@@ -1,7 +1,14 @@
 import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
+import { PublicKey } from "@solana/web3.js";
 import type { PoolSnapshot, SupportedDex } from "./domain.js";
 import { parseDexList } from "./config.js";
+import {
+  METEORA_DLMM_PROGRAM,
+  ORCA_WHIRLPOOL_PROGRAM,
+  RAYDIUM_CLMM_PROGRAM,
+  RAYDIUM_CPMM_PROGRAM,
+} from "./execution/protocol-ids.js";
 
 export type DiscoverySettings = {
   enabledDexes: SupportedDex[];
@@ -11,7 +18,7 @@ export type DiscoverySettings = {
 export type DiscoveryCandidate = {
   id: string;
   dex: SupportedDex;
-  source: "meteora-api" | "wss-log" | "fallback";
+  source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
   signature?: string;
   detectedAt: string;
   confidence: number;
@@ -114,6 +121,53 @@ export function detectDexFromLogs(logs: string[]): SupportedDex[] {
   return [...matches];
 }
 
+export function programIdsForDex(dex: SupportedDex): PublicKey[] {
+  if (dex === "meteora") return [METEORA_DLMM_PROGRAM];
+  if (dex === "raydium") return [RAYDIUM_CLMM_PROGRAM, RAYDIUM_CPMM_PROGRAM];
+  return [ORCA_WHIRLPOOL_PROGRAM];
+}
+
+type DiscoveryConnection = {
+  getSignaturesForAddress(address: PublicKey, options?: { limit?: number }): Promise<Array<{ signature: string; blockTime?: number | null } & Record<string, unknown>>>;
+  getTransaction(signature: string, options?: Record<string, unknown>): Promise<unknown>;
+};
+
+export async function discoverRecentProgramCandidates(connection: DiscoveryConnection, enabledDexes: SupportedDex[], seenSignatures: Set<string>, limitPerDex = 5) {
+  const candidates: DiscoveryCandidate[] = [];
+  for (const dex of enabledDexes) {
+    for (const programId of programIdsForDex(dex)) {
+      const signatures = await connection.getSignaturesForAddress(programId, { limit: limitPerDex });
+      for (const info of signatures) {
+        if (seenSignatures.has(info.signature)) continue;
+        const tx = await connection.getTransaction(info.signature, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        } as never);
+        const logs = extractLogMessages(tx);
+        const detectedDexes = detectDexFromLogs(logs);
+        if (detectedDexes.length === 0 && !matchesDexProgram(tx, programId)) continue;
+        const detectedAt = info.blockTime ? new Date(info.blockTime * 1000).toISOString() : new Date().toISOString();
+        const keywords = matchDiscoveryKeywords(logs);
+        const resolvedDexes = detectedDexes.length > 0 ? detectedDexes : [dex];
+        for (const resolvedDex of resolvedDexes) {
+          const signature = info.signature;
+          const confidence = keywords.length > 0 ? 0.86 : 0.76;
+          candidates.push(buildDiscoveryCandidate({
+            dex: resolvedDex,
+            signature,
+            detectedAt,
+            keywords,
+            confidence,
+            source: "rpc-recent",
+          }));
+          seenSignatures.add(signature);
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
 export function buildDiscoveryCandidate(input: {
   dex: SupportedDex;
   signature?: string;
@@ -210,6 +264,24 @@ export function mergeDiscoveredPools(basePools: PoolSnapshot[], candidates: Disc
 
 function createCandidateId(dex: SupportedDex, signature: string) {
   return `${dex}:${signature.slice(0, 32)}`;
+}
+
+function matchDiscoveryKeywords(logs: string[]) {
+  const keywords = ["initialize", "create", "lb_pair", "whirlpool", "raydium", "meteora", "open_position", "pool", "pair"];
+  const normalizedLogs = logs.map((entry) => entry.toLowerCase());
+  return keywords.filter((keyword) => normalizedLogs.some((entry) => entry.includes(keyword)));
+}
+
+type TransactionLike = any;
+
+function extractLogMessages(tx: TransactionLike) {
+  return (tx?.meta?.logMessages ?? []).map(String);
+}
+
+function matchesDexProgram(tx: TransactionLike, programId: PublicKey) {
+  const instructions = tx?.transaction?.message?.compiledInstructions ?? [];
+  const accountKeys = tx?.transaction?.message?.staticAccountKeys ?? tx?.transaction?.message?.accountKeys ?? [];
+  return instructions.some((instruction: { programIdIndex: number }) => accountKeys[instruction.programIdIndex]?.toBase58?.() === programId.toBase58());
 }
 
 async function ensureDir(filePath: string) {

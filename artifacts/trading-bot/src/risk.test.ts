@@ -46,6 +46,7 @@ test("risk engine caps size and rejects low confidence", () => {
 });
 
 test("risk engine rejects pools outside allowlists and excessive dislocation", () => {
+  const now = new Date().toISOString();
   const engine = new RiskEngine({
     ...policy,
     poolAllowlist: ["pool-allow"],
@@ -71,11 +72,11 @@ test("risk engine rejects pools outside allowlists and excessive dislocation", (
     suggestedCapitalUsd: 1_000,
     slippageBps: 50,
     priorityFeeMicroLamports: 1_500,
-    createdAt: "2026-05-31T00:00:00.000Z",
+    createdAt: now,
   } as const;
 
   const snapshot = {
-    capturedAt: new Date().toISOString(),
+    capturedAt: now,
     pools: [
       {
         address: "pool-allow",
@@ -94,7 +95,7 @@ test("risk engine rejects pools outside allowlists and excessive dislocation", (
         signalSeed: "ENTER",
         currentPrice: 300,
         activeBinId: 12,
-        createdAt: "2026-05-31T00:00:00.000Z",
+        createdAt: now,
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         liquidityLocked: true,
@@ -177,6 +178,7 @@ test("risk engine rejects pools that are too old or unverifiable", () => {
 });
 
 test("risk engine rejects extreme top ten holder concentration", () => {
+  const now = new Date().toISOString();
   const engine = new RiskEngine({
     ...policy,
     maxTopTenHolderSharePct: 90,
@@ -198,11 +200,11 @@ test("risk engine rejects extreme top ten holder concentration", () => {
     suggestedCapitalUsd: 1_000,
     slippageBps: 50,
     priorityFeeMicroLamports: 1_500,
-    createdAt: "2026-05-31T00:00:00.000Z",
+    createdAt: now,
   } as const;
 
   const snapshot = {
-    capturedAt: new Date().toISOString(),
+    capturedAt: now,
     pools: [
       {
         address: "pool-topten",
@@ -221,7 +223,7 @@ test("risk engine rejects extreme top ten holder concentration", () => {
         signalSeed: "ENTER",
         currentPrice: 170,
         activeBinId: 12,
-        createdAt: "2026-05-31T00:00:00.000Z",
+        createdAt: now,
         mintAuthorityRevoked: true,
         freezeAuthorityRevoked: true,
         liquidityLocked: true,

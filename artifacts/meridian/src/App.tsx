@@ -92,7 +92,7 @@ type DiscoveryStatus = {
   candidates: Array<{
     id: string;
     dex: SupportedDex;
-    source: "meteora-api" | "wss-log" | "fallback";
+    source: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
     signature?: string;
     detectedAt: string;
     confidence: number;
@@ -110,7 +110,7 @@ type DiscoveryStatus = {
 type UiPool = Pool & {
   dex?: SupportedDex;
   discoveryConfidence?: number;
-  discoverySource?: "meteora-api" | "wss-log" | "fallback";
+  discoverySource?: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
   discoverySignature?: string;
   isDiscoveryCandidate?: boolean;
 };

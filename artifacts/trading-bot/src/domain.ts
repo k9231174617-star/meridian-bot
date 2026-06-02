@@ -64,7 +64,7 @@ export type PoolSnapshot = {
   currentPrice: number;
   activeBinId: number;
   discoveryConfidence?: number;
-  discoverySource?: "meteora-api" | "wss-log" | "fallback";
+  discoverySource?: "meteora-api" | "wss-log" | "wss-program" | "rpc-recent" | "fallback";
   discoverySignature?: string;
   isDiscoveryCandidate?: boolean;
 };

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Connection } from "@solana/web3.js";
 import { loadConfig, resolveSignerSecretKey } from "./config.js";
 import { createStorage, type BotStorage } from "./storage.js";
 import { DirectMarketDataProvider, LocalApiMarketDataProvider } from "./market-data.js";
@@ -13,6 +14,7 @@ import { MemeIntelService } from "./meme-intel.js";
 import {
   appendDiscoveryCandidate,
   buildDiscoveryCandidate,
+  discoverRecentProgramCandidates,
   loadDiscoveryCandidates,
   loadDiscoverySettings,
   mergeDiscoveredPools,
@@ -62,7 +64,9 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     rpcUrl: config.rpcUrl,
     rpcWsUrl: config.rpcWsUrl,
     logKeywords: config.wssLogKeywords,
+    enabledDexes: config.enabledDexes,
   });
+  const discoveryRpc = config.rpcUrl ? new Connection(config.rpcUrl, config.rpcWsUrl ? { commitment: "confirmed", wsEndpoint: config.rpcWsUrl } : "confirmed") : null;
   const stopPoolWatcher = await poolWatcher.start(async (event) => {
     metrics.log("wss_pool_candidate", event);
     if (storage) {
@@ -73,7 +77,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
           detectedAt: event.detectedAt,
           keywords: event.keywords,
           confidence: 0.72,
-          source: "wss-log",
+          source: event.programIds.length > 0 ? "wss-program" : "wss-log",
         });
         await appendDiscoveryCandidate(config.storageDir, candidate);
       }
@@ -110,6 +114,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       cycles += 1;
       metrics.recordCycle();
       const discoverySettings = await loadDiscoverySettings(config.storageDir, config.enabledDexes);
+      const seenDiscoverySignatures = new Set((await loadDiscoveryCandidates(config.storageDir, 100)).map((candidate) => candidate.signature).filter((signature): signature is string => Boolean(signature)));
 
       let snapshot;
       try {
@@ -148,6 +153,28 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
             discoverySettings.enabledDexes,
           ),
         };
+        if (discoveryRpc) {
+          try {
+            const recentCandidates = await discoverRecentProgramCandidates(discoveryRpc, discoverySettings.enabledDexes, seenDiscoverySignatures, 5);
+            for (const candidate of recentCandidates) {
+              await appendDiscoveryCandidate(config.storageDir, candidate);
+              metrics.log("recent_dex_candidate", {
+                dex: candidate.dex,
+                source: candidate.source,
+                signature: candidate.signature,
+                confidence: candidate.confidence,
+              });
+            }
+            if (recentCandidates.length > 0) {
+              snapshot = {
+                ...snapshot,
+                pools: mergeDiscoveredPools(snapshot.pools, recentCandidates, discoverySettings.enabledDexes),
+              };
+            }
+          } catch (error) {
+            metrics.log("recent_discovery_failed", { cycle: cycles, error: serializeError(error) });
+          }
+        }
         metrics.recordSnapshot(snapshot.capturedAt);
         state = { ...state, consecutiveFailures: 0, lastSnapshotAt: snapshot.capturedAt, lastBreakerReason: undefined };
       } catch (error) {

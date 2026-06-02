@@ -1,6 +1,7 @@
 import { Connection } from "@solana/web3.js";
 import type { SupportedDex } from "./domain.js";
 import { detectDexFromLogs } from "./dex-discovery.js";
+import { METEORA_DLMM_PROGRAM, ORCA_WHIRLPOOL_PROGRAM, RAYDIUM_CLMM_PROGRAM, RAYDIUM_CPMM_PROGRAM } from "./execution/protocol-ids.js";
 
 export type PoolWatchEvent = {
   signature: string;
@@ -8,6 +9,7 @@ export type PoolWatchEvent = {
   keywords: string[];
   logs: string[];
   dexes: SupportedDex[];
+  programIds: string[];
   source: "wss";
 };
 
@@ -16,17 +18,20 @@ export type PoolWatcherOptions = {
   rpcWsUrl?: string;
   enabled?: boolean;
   logKeywords?: string[];
+  enabledDexes?: SupportedDex[];
 };
 
 export class PoolWatcher {
   private readonly keywords: string[];
+  private readonly enabledDexes: SupportedDex[];
   private readonly seenSignatures = new Set<string>();
   private readonly seenOrder: string[] = [];
   private connection?: Connection;
-  private subscriptionId?: number;
+  private subscriptionIds: number[] = [];
 
   constructor(private readonly options: PoolWatcherOptions = {}) {
     this.keywords = normalizeKeywords(options.logKeywords);
+    this.enabledDexes = options.enabledDexes ?? ["meteora", "raydium", "orca"];
   }
 
   async start(onEvent: (event: PoolWatchEvent) => void | Promise<void>) {
@@ -39,43 +44,54 @@ export class PoolWatcher {
     this.connection = wsEndpoint
       ? new Connection(rpcUrl, { commitment: "confirmed", wsEndpoint })
       : new Connection(rpcUrl, "confirmed");
-    this.subscriptionId = this.connection.onLogs("all", async (logInfo) => {
-      if (logInfo.err) return;
-      if (this.seenSignatures.has(logInfo.signature)) return;
 
-      const logs = (logInfo.logs ?? []).map(String);
-      const keywords = matchKeywords(logs, this.keywords);
-      if (keywords.length === 0) return;
-      const dexes = detectDexFromLogs(logs);
+    this.subscriptionIds.push(this.connection.onLogs("all", async (logInfo) => {
+      await this.handleLog(logInfo.signature, (logInfo.logs ?? []).map(String), onEvent);
+    }, "confirmed"));
 
-      this.seenSignatures.add(logInfo.signature);
-      this.seenOrder.push(logInfo.signature);
-      if (this.seenOrder.length > 5000) {
-        const removed = this.seenOrder.shift();
-        if (removed) this.seenSignatures.delete(removed);
+    for (const dex of this.enabledDexes) {
+      for (const programId of programIdsForDex(dex)) {
+        this.subscriptionIds.push(this.connection.onLogs(programId, async (logInfo) => {
+          await this.handleLog(logInfo.signature, (logInfo.logs ?? []).map(String), onEvent, [dex], [programId.toBase58()]);
+        }, "confirmed"));
       }
-
-      await onEvent({
-        signature: logInfo.signature,
-        detectedAt: new Date().toISOString(),
-        keywords,
-        logs,
-        dexes,
-        source: "wss",
-      });
-    }, "confirmed");
+    }
 
     return async () => {
-      if (typeof this.subscriptionId === "number") {
+      for (const subscriptionId of this.subscriptionIds) {
         try {
-          await this.connection?.removeOnLogsListener(this.subscriptionId);
+          await this.connection?.removeOnLogsListener(subscriptionId);
         } catch {
           // ignore shutdown errors
         }
       }
-      this.subscriptionId = undefined;
+      this.subscriptionIds = [];
       this.connection = undefined;
     };
+  }
+
+  private async handleLog(signature: string, logs: string[], onEvent: (event: PoolWatchEvent) => void | Promise<void>, explicitDexes: SupportedDex[] = [], programIds: string[] = []) {
+    if (this.seenSignatures.has(signature)) return;
+    const keywords = matchKeywords(logs, this.keywords);
+    const dexes = explicitDexes.length > 0 ? explicitDexes : detectDexFromLogs(logs);
+    if (keywords.length === 0 && dexes.length === 0) return;
+
+    this.seenSignatures.add(signature);
+    this.seenOrder.push(signature);
+    if (this.seenOrder.length > 5000) {
+      const removed = this.seenOrder.shift();
+      if (removed) this.seenSignatures.delete(removed);
+    }
+
+    await onEvent({
+      signature,
+      detectedAt: new Date().toISOString(),
+      keywords,
+      logs,
+      dexes,
+      programIds,
+      source: explicitDexes.length > 0 ? "wss" : "wss",
+    });
   }
 }
 
@@ -89,6 +105,12 @@ export function matchKeywords(logs: string[], keywords: string[]) {
 
 function normalizeKeywords(keywords: string[] | undefined) {
   return [...new Set((keywords ?? []).map((keyword) => keyword.trim()).filter(Boolean))];
+}
+
+function programIdsForDex(dex: SupportedDex) {
+  if (dex === "meteora") return [METEORA_DLMM_PROGRAM];
+  if (dex === "raydium") return [RAYDIUM_CLMM_PROGRAM, RAYDIUM_CPMM_PROGRAM];
+  return [ORCA_WHIRLPOOL_PROGRAM];
 }
 
 function normalizeText(value: string) {

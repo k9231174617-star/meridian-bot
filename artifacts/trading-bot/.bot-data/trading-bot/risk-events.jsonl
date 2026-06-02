@@ -1,0 +1,30 @@
+{"kind":"risk","signalId":"sig_ec35154b589807f3c13a8c9f","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:32.550Z (10000 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_93b442d4831af54e034f12bd","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:33.051Z (0 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_b43796ab96606d60a8e298ad","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:33.091Z (10000 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_11b0656bc07a3ac808dd8586","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:33.123Z (0 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_e833402579d85d61b3441eb0","decision":{"approved":false,"reason":"Price dislocation 11057 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_7fd34347efd6bee32dab95f9","decision":{"approved":false,"reason":"Price dislocation 8110 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_5ca4cbaed6b8318433cb5f4a","decision":{"approved":false,"reason":"Price dislocation 15677 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_17d7d5d51368d8e8349e71e8","decision":{"approved":false,"reason":"Price dislocation 11057 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_e61e4b6168534376957b18ac","decision":{"approved":false,"reason":"Price dislocation 8110 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_e2b6092915966b8656bf8cfa","decision":{"approved":false,"reason":"Price dislocation 15677 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_baef97ba2d219d3e8c7a40d2","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:49.249Z (10000 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_625886a89499e592a6b01859","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:49.820Z (0 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_48fddb7e86c6420e3c5fcee1","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:49.850Z (10000 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_9abf1a52933f40b7df476a32","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:24:49.874Z (0 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_2ee265db5b08289584eab84b","decision":{"approved":false,"reason":"Price dislocation 11060 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_6a06ecc35606612db1ef5005","decision":{"approved":false,"reason":"Price dislocation 8111 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_d76be8ae67906d4fc92f3a52","decision":{"approved":false,"reason":"Price dislocation 15680 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_772d2bb3a19d5338cbf89cdd","decision":{"approved":false,"reason":"Price dislocation 11060 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_32aa6697283480dca781276e","decision":{"approved":false,"reason":"Price dislocation 8111 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_66422a275db8069994b8b9de","decision":{"approved":false,"reason":"Price dislocation 15680 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_9f7aee613c557770c44297ca","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:25:05.925Z (10000 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_f494bf21cf1367610b649e19","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:25:06.371Z (0 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_534bc365b29364a724425d30","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:25:06.408Z (10000 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_3e97899c29f24a98903e89bd","decision":{"approved":true,"reason":"Approved at 2026-06-01T19:25:06.438Z (0 bps dislocation)","cappedAmountUsd":500,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_8b173af985aa48dcd96360b2","decision":{"approved":false,"reason":"Price dislocation 11046 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_dd198a6a537db8acc4b3daf5","decision":{"approved":false,"reason":"Price dislocation 8109 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_aaa03948bb92e12436174164","decision":{"approved":false,"reason":"Price dislocation 15679 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_16b735bc0afc863ddba42e6c","decision":{"approved":false,"reason":"Price dislocation 11046 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_ebf20216c0d779d90aaafade","decision":{"approved":false,"reason":"Price dislocation 8109 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
+{"kind":"risk","signalId":"sig_c3a0b7283842b270e312bf8d","decision":{"approved":false,"reason":"Price dislocation 15679 bps above policy limit 750 bps","cappedAmountUsd":0,"circuitBreakerActive":false}}
