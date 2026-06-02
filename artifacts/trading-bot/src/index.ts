@@ -15,3 +15,7 @@ export * from "./execution/jupiter-client.js";
 export * from "./execution/orchestrator.js";
 export * from "./execution/instructions/raydium_cpmm.js";
 export * from "./execution/instructions/meteora_dlmm.js";
+export * from "./orchestrator.js";
+export * from "./streams/event-bus.js";
+export * from "./streams/wss-pool-watcher.js";
+export * from "./streams/geyser-client.js";

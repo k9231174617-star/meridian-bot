@@ -9,8 +9,8 @@ import { PaperExecutionClient, DryRunExecutionClient, JupiterSwapExecutionClient
 import { BotMetrics } from "./observability.js";
 import { createAlertSink } from "./alerts.js";
 import { TokenSafetyInspector } from "./security.js";
-import { PoolWatcher } from "./pool-watcher.js";
 import { MemeIntelService } from "./meme-intel.js";
+import { BotOrchestrator } from "./orchestrator.js";
 import {
   appendDiscoveryCandidate,
   appendDiscoveryObservation,
@@ -62,47 +62,23 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     socialApiUrl: config.meme.socialApiUrl,
     eventApiUrl: config.meme.eventApiUrl,
   });
-  const poolWatcher = new PoolWatcher({
-    enabled: config.enableWssPoolWatcher,
-    rpcUrl: config.rpcUrl,
-    rpcWsUrl: config.rpcWsUrl,
-    logKeywords: config.wssLogKeywords,
-    enabledDexes: config.enabledDexes,
+  const orchestrator = new BotOrchestrator({
+    enabled: true,
+    enableWssPoolWatcher: config.enableWssPoolWatcher,
+    enableGeyser: Boolean(config.yellowstoneEndpoint),
+    wss: {
+      rpcUrl: config.rpcUrl,
+      rpcWsUrl: config.rpcWsUrl,
+      logKeywords: config.wssLogKeywords,
+      enabledDexes: config.enabledDexes,
+    },
+    geyser: {
+      endpoint: config.yellowstoneEndpoint,
+      token: config.yellowstoneToken,
+      enabled: Boolean(config.yellowstoneEndpoint),
+    },
   });
   const discoveryRpc = config.rpcUrl ? new Connection(config.rpcUrl, config.rpcWsUrl ? { commitment: "confirmed", wsEndpoint: config.rpcWsUrl } : "confirmed") : null;
-  const stopPoolWatcher = await poolWatcher.start(async (event) => {
-    metrics.log("wss_pool_candidate", event);
-    if (storage) {
-      for (const dex of event.dexes) {
-        const candidate = buildDiscoveryCandidate({
-          dex,
-          signature: event.signature,
-          detectedAt: event.detectedAt,
-          keywords: event.keywords,
-          confidence: 0.72,
-          source: event.programIds.length > 0 ? "wss-program" : "wss-log",
-        });
-        await appendDiscoveryCandidate(config.storageDir, candidate);
-        await appendDiscoveryObservation(config.storageDir, buildDiscoveryObservation({
-          dex,
-          signature: event.signature,
-          detectedAt: event.detectedAt,
-          keywords: event.keywords,
-          source: event.programIds.length > 0 ? "wss-program" : "wss-log",
-          status: "accepted",
-          reason: "WSS keyword match and dex inference",
-          accounts: event.programIds,
-        }));
-      }
-    }
-    await emitAlert({
-      severity: "info",
-      title: "Potential new pool or launch detected",
-      message: `WSS keyword match on signature ${event.signature}`,
-      context: event,
-      createdAt: event.detectedAt,
-    });
-  });
   let previous = storage ? await storage.loadLastSnapshot() : null;
   let state: RiskState = { openExposureUsd: 0, dailyLossUsd: 0, consecutiveFailures: 0 };
   let cycles = 0;
@@ -121,6 +97,107 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     }
     await alertSink.notify(alert);
   }
+
+  const stopOrchestration = await orchestrator.start({
+    onPoolNew: async (event) => {
+      if (event.data.source === "snapshot") {
+        metrics.log("snapshot_pool_candidate", {
+          type: event.type,
+          ts: event.ts,
+          poolAddress: event.poolAddress,
+          tokenMint: event.tokenMint,
+          walletAddress: event.walletAddress,
+          data: event.data,
+        });
+        return;
+      }
+
+      const signature = typeof event.data.signature === "string" ? event.data.signature : undefined;
+      const detectedAt = typeof event.data.detectedAt === "string" ? event.data.detectedAt : new Date(event.ts).toISOString();
+      const keywords = Array.isArray(event.data.keywords)
+        ? event.data.keywords.filter((keyword): keyword is string => typeof keyword === "string")
+        : [];
+      const programIds = Array.isArray(event.data.programIds)
+        ? event.data.programIds.filter((programId): programId is string => typeof programId === "string")
+        : [];
+      const dexes = Array.isArray(event.data.dexes)
+        ? event.data.dexes.filter((dex): dex is "meteora" | "raydium" | "orca" => dex === "meteora" || dex === "raydium" || dex === "orca")
+        : [];
+
+      metrics.log("wss_pool_candidate", {
+        type: event.type,
+        ts: event.ts,
+        poolAddress: event.poolAddress,
+        tokenMint: event.tokenMint,
+        walletAddress: event.walletAddress,
+        data: { ...event.data, signature, detectedAt, keywords, programIds, dexes },
+      });
+
+      if (storage && signature) {
+        for (const dex of dexes) {
+          const candidate = buildDiscoveryCandidate({
+            dex,
+            signature,
+            detectedAt,
+            keywords,
+            confidence: 0.72,
+            source: programIds.length > 0 ? "wss-program" : "wss-log",
+          });
+          await appendDiscoveryCandidate(config.storageDir, candidate);
+          await appendDiscoveryObservation(config.storageDir, buildDiscoveryObservation({
+            dex,
+            signature,
+            detectedAt,
+            keywords,
+            source: programIds.length > 0 ? "wss-program" : "wss-log",
+            status: "accepted",
+            reason: "WSS keyword match and dex inference",
+            accounts: programIds,
+          }));
+        }
+      }
+
+      if (signature) {
+        await emitAlert({
+          severity: "info",
+          title: "Potential new pool or launch detected",
+          message: `WSS keyword match on signature ${signature}`,
+          context: { ...event, data: { ...event.data, signature, detectedAt, keywords, programIds, dexes } },
+          createdAt: detectedAt,
+        });
+      }
+    },
+    onTokenMigrate: async (event) => {
+      metrics.log("token_migrate_event", {
+        type: event.type,
+        ts: event.ts,
+        poolAddress: event.poolAddress,
+        tokenMint: event.tokenMint,
+        walletAddress: event.walletAddress,
+        data: event.data,
+      });
+    },
+    onSniperDetected: async (event) => {
+      metrics.log("sniper_detected_event", {
+        type: event.type,
+        ts: event.ts,
+        poolAddress: event.poolAddress,
+        tokenMint: event.tokenMint,
+        walletAddress: event.walletAddress,
+        data: event.data,
+      });
+    },
+    onPhantomAttacked: async (event) => {
+      metrics.log("phantom_attack_event", {
+        type: event.type,
+        ts: event.ts,
+        poolAddress: event.poolAddress,
+        tokenMint: event.tokenMint,
+        walletAddress: event.walletAddress,
+        data: event.data,
+      });
+    },
+  });
 
   try {
     while (true) {
@@ -238,6 +315,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
       }
 
       const recentSnapshots = storage ? await storage.loadRecentSnapshots(6) : [];
+      orchestrator.ingestSnapshot(snapshot, previous ?? undefined, recentSnapshots);
       let cycleSignals = signals.generate({ now: snapshot, previous: previous ?? undefined, history: recentSnapshots });
       if (config.mode === "paper" && config.paperDebugForceSignal && cycleSignals.length === 0) {
         const forcedSignal = buildPaperDebugSignal(snapshot, cycles, config.provider);
@@ -425,7 +503,7 @@ export async function runBot(modeOverride?: BotMode, overrides?: RunBotOverrides
     });
     throw error;
   } finally {
-    await stopPoolWatcher();
+    await stopOrchestration();
     const summary = metrics.snapshot();
     metrics.recordRunFinish(runStatus, new Date().toISOString());
     if (storage) {
