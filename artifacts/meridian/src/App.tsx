@@ -718,7 +718,9 @@ function App() {
   const t = STRINGS[lang];
   const walletValid = walletAddress.trim().length >= 32;
   const canQueryWallet = walletConnected && walletValid;
-  const isMobileDevice = useMemo(() => /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent), []);
+  const isAndroidDevice = useMemo(() => /android/i.test(navigator.userAgent), []);
+  const isIosDevice = useMemo(() => /iphone|ipad|ipod/i.test(navigator.userAgent), []);
+  const isMobileDevice = isAndroidDevice || isIosDevice || /mobile/i.test(navigator.userAgent);
   const adapterWalletNames = useMemo<Set<string>>(
     () => new Set(adapterWallets.map((entry) => entry.adapter.name)),
     [adapterWallets],
@@ -1207,18 +1209,49 @@ function App() {
 
     switch (providerName) {
       case "Phantom":
-        return `https://phantom.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}`;
+        return buildWalletLaunchUrl({
+          httpsUrl: `https://phantom.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}`,
+          androidPackage: "app.phantom",
+        });
       case "Solflare":
-        return `https://solflare.com/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`;
+        return buildWalletLaunchUrl({
+          httpsUrl: `https://solflare.com/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`,
+          androidPackage: "com.solflare.mobile",
+        });
       case "Backpack":
-        return `https://backpack.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`;
+        return buildWalletLaunchUrl({
+          httpsUrl: `https://backpack.app/ul/v1/connect?app_url=${appUrl}&dapp_encryption_public_key=${session.publicKeyBase58}&redirect_link=${redirectLink}&cluster=${cluster}`,
+          androidPackage: "app.backpack.mobile",
+        });
       case "OKX Wallet": {
         const okxDeepLink = `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(window.location.href)}`;
-        return `https://web3.okx.com/download?deeplink=${encodeURIComponent(okxDeepLink)}`;
+        if (isAndroidDevice) {
+          return `intent://wallet/dapp/url?dappUrl=${encodeURIComponent(window.location.href)}#Intent;scheme=okx;package=com.okx.wallet;S.browser_fallback_url=${encodeURIComponent(`https://web3.okx.com/download?deeplink=${encodeURIComponent(okxDeepLink)}`)};end`;
+        }
+        return okxDeepLink;
       }
       default:
         return window.location.href;
     }
+  }
+
+  function buildWalletLaunchUrl({
+    httpsUrl,
+    androidPackage,
+  }: {
+    httpsUrl: string;
+    androidPackage: string;
+  }) {
+    if (isIosDevice) {
+      return httpsUrl;
+    }
+
+    if (isAndroidDevice) {
+      const intentTarget = httpsUrl.replace(/^https?:\/\//, "");
+      return `intent://${intentTarget}#Intent;scheme=https;package=${androidPackage};S.browser_fallback_url=${encodeURIComponent(httpsUrl)};end`;
+    }
+
+    return httpsUrl;
   }
 
   async function connectWalletProvider(providerName: WalletOptionName) {
