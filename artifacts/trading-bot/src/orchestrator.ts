@@ -40,14 +40,20 @@ type OrchestrationStats = {
 export class BotOrchestrator {
   private readonly wssWatcher: WssPoolWatcher;
   private readonly geyserClient: GeyserClient;
-  private readonly listeners: Array<() => void> = [];
+  private readonly hookHandlers = new Map<BotEvent["type"], OrchestratorHook[]>();
+  private readonly eventQueue: BotEvent[] = [];
+  private readonly recentEvents = new Map<string, number>();
   private stats: OrchestrationStats = {
     eventsEmitted: 0,
     eventsByType: {},
   };
   private started = false;
+  private processingQueue = false;
+  private circuitOpenUntil = 0;
   private stopWss?: () => Promise<void>;
   private stopGeyser?: () => Promise<void>;
+  private readonly maxQueueSize = 1_000;
+  private readonly dedupTtlMs = 30_000;
 
   constructor(private readonly options: OrchestratorOptions = {}) {
     this.wssWatcher = new WssPoolWatcher({
@@ -82,19 +88,13 @@ export class BotOrchestrator {
   }
 
   async stop() {
-    while (this.listeners.length > 0) {
-      const remove = this.listeners.pop();
-      try {
-        remove?.();
-      } catch {
-        // ignore listener shutdown errors
-      }
-    }
-
     await this.stopWss?.();
     await this.stopGeyser?.();
     this.stopWss = undefined;
     this.stopGeyser = undefined;
+    this.eventQueue.length = 0;
+    this.hookHandlers.clear();
+    this.recentEvents.clear();
     this.started = false;
   }
 
@@ -260,7 +260,8 @@ export class BotOrchestrator {
         });
       }
 
-      if (pool.creatorAddress || (prev && prev.creatorAddress && prev.creatorAddress !== pool.creatorAddress)) {
+      const creatorChanged = Boolean(pool.creatorAddress) && (!prev?.creatorAddress || prev.creatorAddress !== pool.creatorAddress);
+      if (creatorChanged) {
         this.emit({
           type: "wallet:dev_swap",
           ts: Date.now(),
@@ -276,7 +277,7 @@ export class BotOrchestrator {
         });
       }
 
-      if ((pool.topHolderWallets?.length ?? 0) > 0 && previous) {
+      if ((pool.topHolderWallets?.length ?? 0) > 0 && prev) {
         const overlap = computeOverlap(pool.topHolderWallets ?? [], prev?.topHolderWallets ?? []);
         if (overlap >= 2) {
           this.emit({
@@ -319,21 +320,76 @@ export class BotOrchestrator {
     for (const [hookName, eventType] of mappings) {
       const listener = hooks[hookName];
       if (!listener) continue;
-      const bound = (event: BotEvent) => {
-        void Promise.resolve(listener(event)).catch((error) => {
-          console.warn(`[orchestrator] ${hookName} listener failed`, error);
-        });
-      };
-      eventBus.on(eventType, bound);
-      this.listeners.push(() => eventBus.off(eventType, bound));
+      const handlers = this.hookHandlers.get(eventType) ?? [];
+      handlers.push(listener);
+      this.hookHandlers.set(eventType, handlers);
     }
   }
 
   private emit(event: BotEvent) {
+    this.pruneRecentEvents();
+    const key = this.eventKey(event);
+    const now = Date.now();
+    const previous = this.recentEvents.get(key);
+    if (typeof previous === "number" && now - previous < this.dedupTtlMs) {
+      return;
+    }
+    this.recentEvents.set(key, now);
+
+    if (now < this.circuitOpenUntil) {
+      this.stats.eventsByType[event.type] = (this.stats.eventsByType[event.type] ?? 0) + 1;
+      return;
+    }
+
+    if (this.eventQueue.length >= this.maxQueueSize) {
+      this.circuitOpenUntil = now + 5_000;
+      this.stats.eventsByType[event.type] = (this.stats.eventsByType[event.type] ?? 0) + 1;
+      console.warn(`[orchestrator] event queue full, dropping ${event.type}`);
+      return;
+    }
+
+    this.eventQueue.push(event);
     this.stats.eventsEmitted += 1;
     this.stats.eventsByType[event.type] = (this.stats.eventsByType[event.type] ?? 0) + 1;
     this.stats.lastEventAt = new Date(event.ts).toISOString();
-    eventBus.emit(event.type, event);
+    void this.processQueue();
+  }
+
+  private async processQueue() {
+    if (this.processingQueue) return;
+    this.processingQueue = true;
+    try {
+      while (this.eventQueue.length > 0) {
+        const event = this.eventQueue.shift();
+        if (!event) continue;
+        eventBus.emit(event.type, event);
+        const handlers = this.hookHandlers.get(event.type);
+        if (!handlers || handlers.length === 0) continue;
+        for (const handler of handlers) {
+          try {
+            await Promise.resolve(handler(event));
+          } catch (error) {
+            console.warn(`[orchestrator] ${event.type} listener failed`, error);
+          }
+        }
+      }
+    } finally {
+      this.processingQueue = false;
+    }
+  }
+
+  private pruneRecentEvents() {
+    const cutoff = Date.now() - this.dedupTtlMs;
+    for (const [key, ts] of this.recentEvents) {
+      if (ts < cutoff) this.recentEvents.delete(key);
+    }
+  }
+
+  private eventKey(event: BotEvent) {
+    const poolAddress = event.poolAddress ?? "";
+    const tokenMint = event.tokenMint ?? "";
+    const walletAddress = event.walletAddress ?? "";
+    return [event.type, poolAddress, tokenMint, walletAddress, stableStringify(event.data)].join("|");
   }
 }
 
@@ -344,4 +400,11 @@ function computeOverlap(left: string[], right: string[]) {
 
 function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(",")}}`;
 }
